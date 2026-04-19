@@ -11,7 +11,7 @@ API_KEY = "g4f_u_mmdc5u_2523f5069691205096c339d099fb0643137af55bc4e79b67_a55cf5a
 BASE_URL = "https://g4f.space/v1"
 
 # OpenRouter - ücretsiz açık kaynak modeller (limitsiz yedek)
-OPENROUTER_KEY = "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"
+OPENROUTER_KEY = ""
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODELS = [
     ("qwen/qwen3.6-plus:free", "Qwen 3.6 Plus"),
