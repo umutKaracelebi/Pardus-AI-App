@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Pardus AI - Puter Kurulumu</title>
+    <script src="https://js.puter.com/v2/"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a1a2e; color: #fff; padding: 40px; text-align: center; }
+        #token-box { background: #000; padding: 15px; border-radius: 8px; margin: 20px auto; max-width: 600px; word-break: break-all; font-family: monospace; font-size: 11px; text-align: left; min-height: 40px; }
+        button { background: #00d4ff; color: #000; border: none; padding: 12px 30px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; margin: 10px; }
+        .success { color: #0f0; }
+        .info { color: #aaa; font-size: 14px; max-width: 500px; margin: 0 auto; }
+    </style>
+</head>
+<body>
+    <h1>🔑 Pardus AI - Puter Kurulumu</h1>
+    <p class="info">Bu sayfayı sadece bir kez açmanız yeterli. Captcha'yı tamamlayın, token otomatik alınacak.</p>
+    
+    <div id="status">⏳ Puter.js yükleniyor...</div>
+    <div id="token-box">Token bekleniyor...</div>
+    <button onclick="copyToken()" id="copyBtn" style="display:none">📋 Token'ı Kopyala</button>
+    <button onclick="saveToken()" id="saveBtn" style="display:none">💾 Uygulamaya Kaydet</button>
+
+    <script>
+        let authToken = '';
+        
+        async function getToken() {
+            document.getElementById('status').textContent = '⏳ Puter bağlantısı bekleniyor...';
+            
+            try {
+                // Puter.js otomatik auth yapacak (captcha gösterebilir)
+                const user = await puter.auth.getUser();
+                
+                // Auth token'ı al
+                authToken = puter.authToken || puter.auth?.token || '';
+                
+                // Token yoksa puter objesinden bul
+                if (!authToken) {
+                    // puter.js internal token'ı
+                    for (const key of Object.keys(puter)) {
+                        const val = puter[key];
+                        if (typeof val === 'string' && val.length > 50 && val.length < 500) {
+                            authToken = val;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!authToken) {
+                    // localStorage'dan al
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        const val = localStorage.getItem(key);
+                        if (key.includes('puter') && val && val.length > 50) {
+                            authToken = val;
+                            break;
+                        }
+                    }
+                }
+
+                document.getElementById('status').innerHTML = `<span class="success">✅ Giriş başarılı: ${user.username}</span>`;
+                document.getElementById('token-box').textContent = authToken || 'Token bulunamadı - console\'u kontrol edin';
+                document.getElementById('copyBtn').style.display = 'inline-block';
+                document.getElementById('saveBtn').style.display = 'inline-block';
+                
+                // Tüm bilgiyi console'a yaz
+                console.log('=== PUTER AUTH INFO ===');
+                console.log('User:', user);
+                console.log('authToken:', puter.authToken);
+                console.log('puter object keys:', Object.keys(puter));
+                console.log('localStorage:', Object.fromEntries(
+                    Array.from({length: localStorage.length}, (_, i) => [localStorage.key(i), localStorage.getItem(localStorage.key(i))])
+                ));
+                
+                // Test: AI çağrısı çalışıyor mu?
+                const r = await puter.ai.chat('OK', { model: 'kimi-k2.5' });
+                console.log('AI test:', r?.message?.content);
+                
+            } catch(e) {
+                document.getElementById('status').innerHTML = `❌ Hata: ${e.message}`;
+                console.error('Auth error:', e);
+            }
+        }
+
+        function copyToken() {
+            navigator.clipboard.writeText(authToken).then(() => {
+                document.getElementById('copyBtn').textContent = '✅ Kopyalandı!';
+            });
+        }
+
+        async function saveToken() {
+            try {
+                const r = await fetch('http://127.0.0.1:5789/api/puter/save-token', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token: authToken})
+                });
+                const data = await r.json();
+                if (data.success) {
+                    document.getElementById('saveBtn').textContent = '✅ Kaydedildi!';
+                    document.getElementById('saveBtn').style.background = '#0f0';
+                } else {
+                    alert('Kayıt hatası: ' + data.error);
+                }
+            } catch(e) {
+                alert('Sunucu çalışmıyor. Token\'ı manuel kopyalayın.');
+            }
+        }
+
+        // 2sn sonra token almaya başla
+        setTimeout(getToken, 2000);
+    </script>
+</body>
+</html>

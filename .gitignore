@@ -1,0 +1,36 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+logs/
+
+# API Keys & Secrets
+oauth_client_secret.json
+ai_files/config.json
+.env
+
+# Proxies
+kimi_free/
+qwen_free/
+.g4f/
+
+# OS / Editor
+.DS_Store
+.vscode/
+
+# Temporary files & testing
+*.bak
+test.*
+Excel-Test.xlsx
+odemiskebabumut.pptx
+*.har
+agent_screenshot*.png
+agent_zoom.png
+current_screen.png
+uploaded_image.png
+ai_files/
+*.safetensors

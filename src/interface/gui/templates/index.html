@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pardus AI Asistanı</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ range(1, 100000) | random }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='fontawesome/css/all.min.css') }}">
+</head>
+<body>
+    <div class="app">
+        <!-- ─── Sidebar ─── -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">
+                    <img src="/static/parduslogo.png" alt="Pardus" class="brand-logo">
+                </div>
+                <div class="brand-text">
+                    <h1>Pardus AI</h1>
+                    <span>Asistan</span>
+                </div>
+            </div>
+
+            <button class="new-chat-btn" id="new-chat-btn">
+                <i class="fa-solid fa-plus"></i>
+                <span>Yeni Sohbet</span>
+            </button>
+
+            <div class="chat-history" id="chat-history">
+                <div class="history-label">Geçmiş</div>
+                <!-- Chat history items will be populated by JS -->
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-footer-item" id="settings-btn">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Ayarlar</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ─── Main Area ─── -->
+        <main class="main">
+            <!-- Header -->
+            <header class="header">
+                <button class="sidebar-toggle" id="sidebar-toggle">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="header-title">
+                    <h2>Pardus AI</h2>
+                    <span class="status-dot"></span>
+                </div>
+                <div class="header-actions">
+                </div>
+            </header>
+
+            <!-- Chat Messages -->
+            <div class="chat-area" id="chat-area">
+                <!-- Welcome Screen -->
+                <div class="welcome" id="welcome-screen">
+                    <div class="welcome-icon">
+                    <img src="/static/parduslogo.png" alt="Pardus" class="welcome-logo">
+                </div>
+                    <h2>Pardus AI Asistanı</h2>
+                    <p>Merhaba! Size nasıl yardımcı olabilirim?</p>
+                    <div class="quick-actions">
+                        <button class="quick-btn" data-prompt="Pardus Linux hakkında bilgi ver.">
+                            <i class="fa-solid fa-info-circle"></i>
+                            Pardus Hakkında
+                        </button>
+                        <button class="quick-btn" data-prompt="Sistemimin özelliklerini göster: İşlemci, RAM, disk alanı, ekran kartı, işletim sistemi sürümü.">
+                            <i class="fa-solid fa-microchip"></i>
+                            Sistem Özellikleri
+                        </button>
+                        <button class="quick-btn" data-prompt="Bugün için bana günlük planlama önerileri ver.">
+                            <i class="fa-solid fa-lightbulb"></i>
+                            Günlük Asistan
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Messages Container -->
+                <div class="messages" id="messages"></div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-area">
+                <div class="input-container" id="input-container">
+                    <div class="attachment-menu-container">
+                        <button class="attach-menu-btn" id="attach-menu-btn" title="Ek Ekle">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                        <div class="attachment-popover hidden" id="attachment-popover">
+                            <button class="popover-btn" id="screenshot-btn"><i class="fa-solid fa-desktop"></i><span>Ekran Görüntüsü</span></button>
+                            <button class="popover-btn" id="attach-btn"><i class="fa-solid fa-image"></i><span>Görsel Yükle</span></button>
+                            <button class="popover-btn" id="video-upload-btn"><i class="fa-solid fa-video"></i><span>Video Yükle</span></button>
+                            <button class="popover-btn" id="audio-upload-btn"><i class="fa-solid fa-music"></i><span>Ses Yükle</span></button>
+                            <button class="popover-btn" id="file-upload-btn"><i class="fa-solid fa-file-lines"></i><span>Dosya Yükle</span></button>
+                        </div>
+                    </div>
+                    <!-- Image Preview Strip -->
+                    <div class="image-preview-strip hidden" id="image-preview-strip">
+                        <div class="preview-thumb-wrapper">
+                            <img id="preview-thumb" src="" alt="Önizleme"/>
+                            <button class="preview-remove-btn" id="preview-remove-btn" title="Görseli Kaldır">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Video Preview Strip -->
+                    <div class="file-preview-strip hidden" id="video-preview-strip">
+                        <div class="file-preview-info">
+                            <i class="fa-solid fa-video" id="video-preview-icon"></i>
+                            <span class="file-preview-name" id="video-preview-name">video.mp4</span>
+                        </div>
+                        <button class="preview-remove-btn" id="video-remove-btn" title="Videoyu Kaldır">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <!-- Audio Preview Strip -->
+                    <div class="file-preview-strip hidden" id="audio-preview-strip">
+                        <div class="file-preview-info">
+                            <i class="fa-solid fa-music" id="audio-preview-icon"></i>
+                            <span class="file-preview-name" id="audio-preview-name">ses.mp3</span>
+                        </div>
+                        <button class="preview-remove-btn" id="audio-remove-btn" title="Sesi Kaldır">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <!-- File Preview Strip -->
+                    <div class="file-preview-strip hidden" id="file-preview-strip">
+                        <div class="file-preview-info">
+                            <i class="fa-solid fa-file" id="file-preview-icon"></i>
+                            <span class="file-preview-name" id="file-preview-name">dosya.pdf</span>
+                        </div>
+                        <button class="preview-remove-btn" id="file-remove-btn" title="Dosyayı Kaldır">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <textarea
+                        id="message-input"
+                        placeholder="Pardus AI'a mesaj yazın..."
+                        rows="1"
+                        autofocus
+                    ></textarea>
+                    <button class="agent-toggle-btn" id="agent-toggle-btn" title="Ajan Modu">
+                        <i class="fa-solid fa-robot"></i>
+                    </button>
+                    <button class="send-btn" id="send-btn" disabled>
+                        <i class="fa-solid fa-arrow-up"></i>
+                    </button>
+                </div>
+                <!-- Agent Status Panel -->
+                <div class="agent-panel hidden" id="agent-panel">
+                    <div class="agent-panel-header">
+                        <div class="agent-status-indicator">
+                            <span class="agent-pulse"></span>
+                            <span id="agent-status-text">Ajan Hazır</span>
+                        </div>
+                        <div class="agent-panel-actions">
+                            <span id="agent-step-count" class="agent-step-count"></span>
+                            <button class="agent-stop-btn hidden" id="agent-stop-btn" title="Durdur">
+                                <i class="fa-solid fa-stop"></i> Durdur
+                            </button>
+                        </div>
+                    </div>
+                    <div class="agent-log" id="agent-log"></div>
+                </div>
+                <div class="input-footer">
+                    Pardus AI yanlış bilgi verebilir. Önemli bilgileri doğrulayın.
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}?v={{ range(1, 100000) | random }}"></script>
+
+    <!-- Agent User Input Modal -->
+    <div class="agent-modal-overlay hidden" id="agent-modal-overlay">
+        <div class="agent-modal">
+            <div class="agent-modal-header">
+                <i class="fa-solid fa-robot"></i>
+                <span>Ajan sizden bilgi istiyor</span>
+            </div>
+            <p id="agent-modal-question">Soru</p>
+            <input type="text" id="agent-modal-input" placeholder="Yanıtınızı yazın...">
+            <div class="agent-modal-actions">
+                <button id="agent-modal-submit" class="agent-modal-btn">Gönder</button>
+                <button id="agent-modal-cancel" class="agent-modal-btn cancel">Atla</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Settings Panel Overlay ─── -->
+    <div class="settings-overlay hidden" id="settings-overlay">
+        <div class="settings-panel">
+            <div class="settings-header">
+                <h2><i class="fa-solid fa-gear"></i> Ayarlar</h2>
+                <button class="settings-close" id="settings-close">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="settings-body">
+                <!-- AI Model Selection -->
+                <div class="settings-section">
+                    <h3><i class="fa-solid fa-robot"></i> Yapay Zeka Modeli</h3>
+                    <div class="model-selector">
+                        <label class="model-option">
+                            <input type="radio" name="ai-model" value="cloud" checked>
+                            <div class="model-card">
+                                <div class="model-card-header">
+                                    <i class="fa-solid fa-cloud"></i>
+                                    <strong>Bulut AI (Gemini)</strong>
+                                </div>
+                                <p>Google Gemini üzerinden çalışır. Hızlı, güçlü ve güncel yanıtlar verir. İnternet bağlantısı gerektirir.</p>
+                            </div>
+                        </label>
+                        <label class="model-option">
+                            <input type="radio" name="ai-model" value="local">
+                            <div class="model-card">
+                                <div class="model-card-header">
+                                    <i class="fa-solid fa-server"></i>
+                                    <strong>Yerel AI (Qwen2-VL)</strong>
+                                </div>
+                                <p>Cihazınızda çalışır. İnternet bağlantısı gerekmez. Daha yavaş olabilir, GPU önerilir.</p>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Privacy Information -->
+                <div class="settings-section">
+                    <h3><i class="fa-solid fa-shield-halved"></i> Veri Mahremiyeti</h3>
+                    <div class="privacy-info">
+                        <div class="privacy-item">
+                            <i class="fa-solid fa-cloud privacy-icon cloud"></i>
+                            <div>
+                                <strong>Bulut AI (Gemini)</strong>
+                                <p>Mesajlarınız Google sunucularına gönderilir ve orada işlenir. Hassas veya kişisel bilgiler paylaşırken dikkatli olun. Google'ın gizlilik politikası geçerlidir.</p>
+                            </div>
+                        </div>
+                        <div class="privacy-item">
+                            <i class="fa-solid fa-lock privacy-icon local"></i>
+                            <div>
+                                <strong>Yerel AI</strong>
+                                <p>Tüm verileriniz cihazınızda kalır, hiçbir sunucuya gönderilmez. Tam mahremiyet sağlanır. Hassas belgeler ve kişisel veriler için önerilir.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Upload Modal -->
+    <div class="modal-overlay hidden" id="image-modal-overlay">
+        <div class="modal">
+            <h3 style="margin-top: 0; color: var(--text-primary); font-size: 1.2rem; margin-bottom: 8px;">Görsel Analizi</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9rem;">Bu görsel ile ilgili sormak istediğiniz soruyu aşağıya yazabilirsiniz.</p>
+            <input type="text" id="image-prompt-input" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-deep); color: #fff; margin-bottom: 20px; outline: none; transition: border-color var(--transition);" placeholder="Bu görseli açıkla..." autocomplete="off"/>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary" id="image-modal-cancel">İptal</button>
+                <button class="btn btn-primary" id="image-modal-confirm">Sanal Ağa Gönder</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

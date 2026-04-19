@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Pardus AI Asistanı
+Comment=Pardus için Yapay Zeka Asistanı
+Exec=/usr/local/bin/pardus-ai
+Icon=/home/umut/pardus_ai_app/pardusaiapplogo.png
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=true

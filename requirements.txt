@@ -1,0 +1,18 @@
+torch>=2.0.0 --index-url https://download.pytorch.org/whl/cpu
+transformers>=4.49.0
+accelerate>=0.27.0
+pillow>=10.0.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+termcolor>=2.4.0
+pyautogui>=0.9.54
+mss>=9.0.1
+packaging
+scipy
+# bitsandbytes>=0.41.0  # GPU gerektirir
+timm
+addict
+matplotlib
+requests
+einops
+# flash-attn>=2.5.0 --no-build-isolation

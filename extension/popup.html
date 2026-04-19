@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kimi Token Auto-Capture</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo-section">
+        <div class="logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="url(#grad1)" stroke-width="2" fill="none"/>
+            <path d="M8 12 L11 15 L16 9" stroke="url(#grad1)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#8B5CF6"/>
+                <stop offset="100%" style="stop-color:#06B6D4"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="title-group">
+          <h1>Kimi Token</h1>
+          <span class="subtitle">Auto-Capture</span>
+        </div>
+      </div>
+      <div class="status-indicator" id="statusIndicator">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-text" id="statusText">Kontrol ediliyor...</span>
+      </div>
+    </div>
+
+    <!-- Token Info Card -->
+    <div class="card" id="tokenCard">
+      <div class="card-header">
+        <span class="card-label">🔑 Refresh Token</span>
+        <button class="btn-icon" id="copyBtn" title="Token'ı Kopyala">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2"/>
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+        </button>
+      </div>
+      <div class="token-display" id="tokenDisplay">
+        <code id="tokenValue">Token bulunamadı</code>
+      </div>
+      <div class="token-meta" id="tokenMeta">
+        <span id="tokenSource"></span>
+        <span id="tokenTime"></span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions">
+      <button class="btn btn-primary" id="refreshBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 4v6h6M23 20v-6h-6"/>
+          <path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/>
+        </svg>
+        Token Yenile
+      </button>
+      <button class="btn btn-secondary" id="testApiBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        API Test
+      </button>
+    </div>
+
+    <!-- API URL Setting -->
+    <div class="card settings-card">
+      <div class="card-header">
+        <span class="card-label">⚙️ API Sunucu</span>
+      </div>
+      <div class="input-group">
+        <input type="text" id="apiUrlInput" placeholder="http://localhost:8001" spellcheck="false">
+        <button class="btn-save" id="saveUrlBtn">Kaydet</button>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Puter + Kimi K2.5 Test</title>
+    <script src="https://js.puter.com/v2/"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a1a2e; color: #fff; padding: 30px; }
+        #out { background: #000; padding: 15px; border-radius: 8px; margin: 10px 0; min-height: 100px; white-space: pre-wrap; }
+        button { background: #00d4ff; color: #000; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 5px; font-weight: bold; }
+        img { max-width: 100px; margin: 10px 0; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h2>🧪 Puter.js + Kimi K2.5 Test</h2>
+    <button onclick="testChat()">Kimi K2.5 Chat</button>
+    <button onclick="testVision()">Kimi K2.5 Vision (Doge)</button>
+    <button onclick="testVisionCanvas()">Kimi K2.5 Vision (Canvas)</button>
+    <img src="https://assets.puter.site/doge.jpeg" id="doge">
+    <div id="out">Butona bas...</div>
+
+    <script>
+        const out = document.getElementById('out');
+
+        async function testChat() {
+            out.textContent = '⏳ Kimi K2.5 chat test ediliyor...\n';
+            try {
+                const r = await puter.ai.chat('Merhaba! Hangi AI modelisin? Kısa cevap ver.', { model: 'kimi-k2.5' });
+                out.textContent += '✅ ' + (r?.message?.content || r);
+            } catch(e) {
+                out.textContent += '❌ ' + e.message;
+            }
+        }
+
+        // Puter vision: ikinci parametre olarak URL geçir
+        async function testVision() {
+            out.textContent = '⏳ Kimi K2.5 vision test (doge)...\n';
+            try {
+                const r = await puter.ai.chat(
+                    'Bu resimde ne görüyorsun? Türkçe cevap ver.',
+                    'https://assets.puter.site/doge.jpeg',
+                    { model: 'kimi-k2.5' }
+                );
+                out.textContent += '✅ Vision: ' + (r?.message?.content || r);
+            } catch(e) {
+                out.textContent += '❌ Vision: ' + e.message;
+            }
+        }
+
+        // Canvas → data URL ile vision
+        async function testVisionCanvas() {
+            out.textContent = '⏳ Kimi K2.5 canvas vision test...\n';
+            const c = document.createElement('canvas');
+            c.width = 80; c.height = 80;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = 'red'; ctx.fillRect(0, 0, 80, 80);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Arial'; ctx.fillText('PARDUS', 5, 45);
+            try {
+                const r = await puter.ai.chat(
+                    'Bu resimde ne renk var ve ne yazıyor?',
+                    c.toDataURL('image/png'),
+                    { model: 'kimi-k2.5' }
+                );
+                out.textContent += '✅ Vision: ' + (r?.message?.content || r);
+            } catch(e) {
+                out.textContent += '❌ Vision: ' + e.message;
+            }
+        }
+    </script>
+</body>
+</html>
