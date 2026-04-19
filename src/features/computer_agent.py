@@ -28,25 +28,23 @@ Her adımda sana ekranın görüntüsü gönderilecek. Sen ekranı analiz edip y
 
 SADECE aşağıdaki aksiyonlardan birini kullan:
 
-1. Tıklama: {"action": "click", "x": 500, "y": 300, "thought": "..."}
-2. Çift tıklama: {"action": "double_click", "x": 500, "y": 300, "thought": "..."}
-3. Sağ tıklama: {"action": "right_click", "x": 500, "y": 300, "thought": "..."}
-4. Yazma: {"action": "type_text", "text": "yazılacak metin", "thought": "..."}
+1. Tıklama: {"action": "click", "element_id": 12, "thought": "..."}
+2. Çift tıklama: {"action": "double_click", "element_id": 12, "thought": "..."}
+3. Sağ tıklama: {"action": "right_click", "element_id": 12, "thought": "..."}
+4. Yazma: {"action": "type_text", "element_id": 12, "text": "yazılacak metin", "thought": "..."}
 5. Kısayol tuşu: {"action": "hotkey", "keys": ["ctrl", "c"], "thought": "..."}
 6. Tek tuş basma: {"action": "press_key", "key": "enter", "thought": "..."}
 7. Kaydırma: {"action": "scroll", "direction": "down", "amount": 3, "thought": "..."}
-8. Mouse taşıma: {"action": "move_to", "x": 500, "y": 300, "thought": "..."}
+8. Mouse taşıma: {"action": "move_to", "element_id": 12, "thought": "..."}
 9. Bekleme: {"action": "wait", "seconds": 2, "thought": "..."}
 10. Görev tamamlandı: {"action": "done", "summary": "Ne yapıldığının özeti", "thought": "..."}
 
 KOORDİNAT & TIKLAMA KURALLARI:
-- Ekran görüntüsünde kırmızı ızgara çizgileri ve koordinat etiketleri var. Bunları kullanarak hedefin piksel konumunu TAHMİN ET.
-- HEDEF ELEMANLARIN (ikon, logo, buton, metin) TAM MERKEZİNE tıkla. Kenara veya köşeye ASLA tıklama.
-- Bir ikona tıklayacaksan, ikonun EN ORTASINI hesapla. Örneğin 40x40 piksel bir ikon (100,200) den başlıyorsa, merkezine (120, 220) tıkla.
-- Butonların ortasına, metin linklerinin ortasına tıkla.
-- Komşu elemanlara yanlışlıkla tıklamamak için hedefin tam merkezini bul.
-- Izgara çizgileri yalnızca referans içindir, sadece 50'nin veya 100'ün katlarını kullanmak zorunda DEĞİLSİN. 523, 417 gibi ara değerler de kullanabilirsin.
-- Koordinatlar (x, y) ekran piksel koordinatlarıdır.
+- DİKKAT: Kendi içsel piksel tahminini, normalize (0-1000) veya bounding box koordinat sistemini KESİNLİKLE KULLANMA! x ve y DEĞERİ DÖNME.
+- Resmin üzerinde yeşil kutularla çevrelenmiş nesneler ve siyah arka planlı SARI RENKLİ NUMARALAR [1], [2], [3] var.
+- Tıklamak istediğin öğenin üzerindeki Numarayı (ID) bul ve bunu "element_id" olarak gönder.
+- Yazı yazmak istediğinde de "element_id" parametresini mutlaka gönder! Böylece ajan önce arama kutusuna tıklar, sonra yazıyı yazar.
+- Örnek: Eğer hedefin yanındaki sarı yazıda [45] yazıyorsa, {"action": "click", "element_id": 45} dönmelisin.
 
 GENEL KURALLAR:
 - Her yanıtta SADECE TEK BİR JSON nesnesi dön, başka hiçbir şey yazma.
@@ -68,6 +66,7 @@ class WaylandInputController:
         self.screen_w = screen_w
         self.screen_h = screen_h
         self._pointer = None   # Absolute pointer
+        self._scroll = None    # Scroll wheel device
         self._env = {**os.environ, 'DISPLAY': ':0'}
         import shutil
         self.has_wtype = shutil.which("wtype") is not None
@@ -77,17 +76,40 @@ class WaylandInputController:
             self._fix_uinput_permissions()
             from evdev import UInput, ecodes, AbsInfo
             
-            # GNOME/Wayland strictly maps ABS coordinates using 0-65535 across the entire desktop.
-            cap = {
+            # 1. Absolute Pointer (Sadece ABS ve KEY, REL eklenirse GNOME Wayland bu cihazı çöpe atıyor)
+            cap_ptr = {
                 ecodes.EV_ABS: [
                     (ecodes.ABS_X, AbsInfo(value=0, min=0, max=65535, fuzz=0, flat=0, resolution=0)),
                     (ecodes.ABS_Y, AbsInfo(value=0, min=0, max=65535, fuzz=0, flat=0, resolution=0)),
                 ],
-                ecodes.EV_REL: [ecodes.REL_WHEEL],
                 ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.BTN_MIDDLE, ecodes.BTN_TOUCH]
             }
-            self._pointer = UInput(events=cap, name='Virtual Absolute Pointer', input_props=[ecodes.INPUT_PROP_DIRECT])
-            print("[Agent] Wayland uyumlu Absolute Fare oluşturuldu, libinput kaydı bekleniyor...")
+            self._pointer = UInput(events=cap_ptr, name='Virtual Absolute Pointer', input_props=[ecodes.INPUT_PROP_DIRECT])
+            
+            # 2. Standart Fare Cihazı (Tekerlek ve İmleci Görünür Kılmak İçin)
+            cap_scroll = {
+                ecodes.EV_REL: [ecodes.REL_X, ecodes.REL_Y, ecodes.REL_WHEEL],
+                ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.BTN_MIDDLE]
+            }
+            self._scroll = UInput(events=cap_scroll, name='Virtual Scroll Wheel')
+            
+            # 3. Sanal Klavye (Tüm tuşları ekleyerek GNOME'un reddetmesini önlüyoruz)
+            cap_kbd = {
+                ecodes.EV_KEY: [
+                    ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL, ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT,
+                    ecodes.KEY_V, ecodes.KEY_C, ecodes.KEY_X, ecodes.KEY_ENTER, ecodes.KEY_BACKSPACE, ecodes.KEY_ESC,
+                    ecodes.KEY_UP, ecodes.KEY_DOWN, ecodes.KEY_LEFT, ecodes.KEY_RIGHT, ecodes.KEY_SPACE, ecodes.KEY_TAB,
+                    ecodes.KEY_Q, ecodes.KEY_W, ecodes.KEY_E, ecodes.KEY_R, ecodes.KEY_T, ecodes.KEY_Y, ecodes.KEY_U,
+                    ecodes.KEY_I, ecodes.KEY_O, ecodes.KEY_P, ecodes.KEY_A, ecodes.KEY_S, ecodes.KEY_D, ecodes.KEY_F,
+                    ecodes.KEY_G, ecodes.KEY_H, ecodes.KEY_J, ecodes.KEY_K, ecodes.KEY_L, ecodes.KEY_Z, ecodes.KEY_X,
+                    ecodes.KEY_C, ecodes.KEY_V, ecodes.KEY_B, ecodes.KEY_N, ecodes.KEY_M,
+                    ecodes.KEY_1, ecodes.KEY_2, ecodes.KEY_3, ecodes.KEY_4, ecodes.KEY_5,
+                    ecodes.KEY_6, ecodes.KEY_7, ecodes.KEY_8, ecodes.KEY_9, ecodes.KEY_0
+                ]
+            }
+            self._keyboard = UInput(events=cap_kbd, name='Virtual Keyboard')
+            
+            print("[Agent] Wayland uyumlu Fare ve Klavye donanımları oluşturuldu...")
             time.sleep(2.0)
 
     def _fix_uinput_permissions(self):
@@ -122,6 +144,14 @@ class WaylandInputController:
         self._pointer.write(ecodes.EV_ABS, ecodes.ABS_Y, abs_y)
         self._pointer.syn()
         time.sleep(0.05)
+        
+        # İmleci GÖRÜNÜR KILMAK (Wake up) - Sadece hareket ettiğinde de imleç kayboluyordu
+        if self._scroll:
+            self._scroll.write(ecodes.EV_REL, ecodes.REL_X, 1)
+            self._scroll.syn()
+            time.sleep(0.01)
+            self._scroll.write(ecodes.EV_REL, ecodes.REL_X, -1)
+            self._scroll.syn()
 
     def click(self, x, y, button="left"):
         from evdev import ecodes
@@ -140,6 +170,14 @@ class WaylandInputController:
         self._pointer.write(ecodes.EV_KEY, btn, 0)
         self._pointer.write(ecodes.EV_KEY, ecodes.BTN_TOUCH, 0)
         self._pointer.syn()
+        
+        # İmleci GÖRÜNÜR KILMAK (Wake up)
+        # Wayland tablet/dokunmatik tıklamalarında imleci gizler. Standart faremizle 1 piksel oynatıp imleci geri getiriyoruz.
+        self._scroll.write(ecodes.EV_REL, ecodes.REL_X, 1)
+        self._scroll.syn()
+        time.sleep(0.01)
+        self._scroll.write(ecodes.EV_REL, ecodes.REL_X, -1)
+        self._scroll.syn()
 
     def double_click(self, x, y):
         self.click(x, y)
@@ -150,46 +188,99 @@ class WaylandInputController:
         from evdev import ecodes
         self._ensure_pointer()
         val = amount if direction == "up" else -amount
-        self._pointer.write(ecodes.EV_REL, ecodes.REL_WHEEL, val)
-        self._pointer.syn()
+        self._scroll.write(ecodes.EV_REL, ecodes.REL_WHEEL, val)
+        self._scroll.syn()
 
-    # ── Klavye (wtype fallback to xdotool) ──
-    # Metin yazma işlemlerinde büyük mapping tablosu yerine doğrudan yerel wtype/xdotool kullanıyoruz.
+    # ── Klavye (Evdev Virtual Keyboard + Clipboard Hack) ──
+    # Wayland'de xdotool çalışmaz, wtype ise her uygulamaya (örn: Chrome) basamayabilir.
+    # Çözüm: Metni panoya kopyalayıp donanımsal klavyeden "Ctrl+V" sinyali göndermek!
+    
+    def _set_clipboard(self, text):
+        import subprocess, shutil
+        if shutil.which("wl-copy"):
+            subprocess.run(["wl-copy"], input=text.encode('utf-8'))
+        elif shutil.which("xclip"):
+            subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode('utf-8'))
+        elif shutil.which("xsel"):
+            subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode('utf-8'))
+        else:
+            print("[Agent] wl-copy bulunamadı, xdotool ile clipboard deneniyor...")
+            subprocess.run(["xdotool", "type", "--delay", "10", text], env=self._env, check=False)
     
     def type_text(self, text):
         if not text:
             return
+        self._ensure_pointer()
+        
+        # 1. Native Wayland aracı (wtype) kuruluysa onu kullan (EN GÜVENLİ)
+        import shutil, subprocess
         if shutil.which("wtype"):
-            subprocess.run(["wtype", text], check=False)
-        else:
-            subprocess.run(["xdotool", "type", "--delay", "50", text], env=self._env, check=False)
+            try:
+                subprocess.run(["wtype", text], check=True)
+                print(f"[Agent] wtype ile yazıldı: {text}")
+                return
+            except Exception as e:
+                print(f"[Agent] wtype hatası: {e}")
+                
+        # 2. wtype yoksa Pano + Ctrl-V taktiği (YEDEK)
+        self._set_clipboard(text)
+        time.sleep(0.2)  # Panonun senkronize olmasını bekle
+        
+        from evdev import ecodes
+        # Ctrl bas
+        self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1)
+        self._keyboard.syn()
+        time.sleep(0.05) # GNOME'un algılaması için biraz bekle
+        # V bas
+        self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_V, 1)
+        self._keyboard.syn()
+        time.sleep(0.05)
+        # V bırak
+        self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_V, 0)
+        self._keyboard.syn()
+        time.sleep(0.02)
+        # Ctrl bırak
+        self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0)
+        self._keyboard.syn()
+        time.sleep(0.05)
 
     def press_key(self, key):
         if not key: return
-        wtype_map = {
-            "enter": "Return", "return": "Return",
-            "backspace": "BackSpace", "escape": "Escape", "esc": "Escape",
-            "up": "Up", "down": "Down", "left": "Left", "right": "Right",
-            "space": "space", "tab": "Tab"
+        self._ensure_pointer()
+        from evdev import ecodes
+        keymap = {
+            "enter": ecodes.KEY_ENTER, "return": ecodes.KEY_ENTER,
+            "backspace": ecodes.KEY_BACKSPACE, "escape": ecodes.KEY_ESC, "esc": ecodes.KEY_ESC,
+            "up": ecodes.KEY_UP, "down": ecodes.KEY_DOWN, "left": ecodes.KEY_LEFT, "right": ecodes.KEY_RIGHT,
+            "space": ecodes.KEY_SPACE, "tab": ecodes.KEY_TAB
         }
-        if shutil.which("wtype"):
-            w_key = wtype_map.get(key.lower(), key)
-            subprocess.run(["wtype", "-k", w_key], check=False)
-        else:
-            subprocess.run(["xdotool", "key", key], env=self._env, check=False)
+        ev_key = keymap.get(key.lower())
+        if ev_key:
+            self._keyboard.write(ecodes.EV_KEY, ev_key, 1)
+            self._keyboard.syn()
+            time.sleep(0.02)
+            self._keyboard.write(ecodes.EV_KEY, ev_key, 0)
+            self._keyboard.syn()
+            time.sleep(0.05)
 
     def hotkey(self, keys):
         if not keys: return
-        key_str = "+".join(keys)
-        subprocess.run(["xdotool", "key", key_str], env=self._env, check=False)
+        # Şimdilik sadece metin yazma ve enter/backspace yetiyor.
+        pass
 
     def close(self):
-        if self._pointer:
-            try:
-                self._pointer.close()
-            except:
-                pass
+        if getattr(self, '_pointer', None):
+            try: self._pointer.close()
+            except: pass
             self._pointer = None
+        if getattr(self, '_scroll', None):
+            try: self._scroll.close()
+            except: pass
+            self._scroll = None
+        if getattr(self, '_keyboard', None):
+            try: self._keyboard.close()
+            except: pass
+            self._keyboard = None
 
 
 # ──────────────── Ana Ajan Sınıfı ────────────────
@@ -212,9 +303,28 @@ class ComputerAgent:
         self._input = None  # WaylandInputController
         self._last_screenshot_hash = None
         self._failed_clicks = []  # [(x, y), ...] başarısız tıklama koordinatları
+        self._current_elements = {}
+        
+        try:
+            from src.features.element_detector import ElementDetector
+            self.element_detector = ElementDetector()
+        except Exception as e:
+            print(f"[Agent] ElementDetector yüklenemedi: {e}")
+            self.element_detector = None
 
     def _get_screen_size(self):
-        """Get screen resolution via xdotool."""
+        """Gerçek çözünürlüğü xdotool yerine AI'ın gördüğü ekran görüntüsünden al."""
+        try:
+            from PIL import Image
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            screenshot_path = os.path.join(project_root, "current_screen.png")
+            if os.path.exists(screenshot_path):
+                with Image.open(screenshot_path) as img:
+                    return img.size[0], img.size[1]
+        except Exception as e:
+            print(f"[Agent] Ekran boyutu görselden okunamadı: {e}")
+            
+        # Fallback to xdotool
         try:
             result = subprocess.run(
                 ["xdotool", "getdisplaygeometry"],
@@ -227,10 +337,13 @@ class ComputerAgent:
             return 1366, 768
 
     def _get_input(self):
-        """Get or create input controller."""
+        """Get or create input controller and update dimensions dynamically."""
+        w, h = self._get_screen_size()
         if self._input is None:
-            w, h = self._get_screen_size()
             self._input = WaylandInputController(w, h)
+        else:
+            self._input.screen_w = w
+            self._input.screen_h = h
         return self._input
 
     @property
@@ -286,6 +399,13 @@ class ComputerAgent:
         with self._lock:
             self.steps.append(step)
         print(f"[Agent] Adım {self.current_step}: {action} — {thought[:80]}")
+        # Kullanıcının ajanın ne yapmaya çalıştığını görmesi için bildirim gönder
+        try:
+            import subprocess
+            safe_thought = thought.replace('"', '').replace("'", "")
+            subprocess.run(["notify-send", "-t", "3000", f"AI Aksiyonu: {action}", safe_thought], check=False)
+        except:
+            pass
 
     def _take_screenshot(self):
         os.environ.setdefault('DISPLAY', ':0')
@@ -296,64 +416,26 @@ class ComputerAgent:
         result = capturer.capture_full_screen(path)
         if result:
             grid_path = os.path.join(project_root, "agent_screenshot_grid.png")
-            self._add_edge_markers(result, grid_path)
+            if self.element_detector:
+                self._current_elements = self.element_detector.detect_and_draw(result, grid_path)
+            else:
+                self._current_elements = {}
+                import shutil
+                shutil.copy2(result, grid_path)
             return result
         return result
 
-    def _add_edge_markers(self, src_path, dst_path):
-        """Gelişmiş ızgara: ana çizgiler (100px), ara tick'ler (50px), kesişim etiketleri."""
-        try:
-            from PIL import Image, ImageDraw
-            img = Image.open(src_path).copy()
-            draw = ImageDraw.Draw(img, 'RGBA')
-            w, h = img.size
-
-            # 1) Ana ızgara çizgileri — her 100px (yarı saydam kırmızı)
-            for gx in range(100, w, 100):
-                draw.line([(gx, 0), (gx, h)], fill=(255, 0, 0, 35), width=1)
-            for gy in range(100, h, 100):
-                draw.line([(0, gy), (w, gy)], fill=(255, 0, 0, 35), width=1)
-
-            # 2) Ara tick işaretleri — her 50px (çok kısa çizgi)
-            for gx in range(50, w, 100):  # 50, 150, 250...
-                for gy in range(0, h, 100):
-                    draw.line([(gx, gy-2), (gx, gy+2)], fill=(255, 0, 0, 60), width=1)
-            for gy in range(50, h, 100):  # 50, 150, 250...
-                for gx in range(0, w, 100):
-                    draw.line([(gx-2, gy), (gx+2, gy)], fill=(255, 0, 0, 60), width=1)
-
-            # 3) Kesişim noktalarında çarpı + koordinat etiketi
-            for gx in range(0, w, 100):
-                for gy in range(0, h, 100):
-                    # + işareti
-                    draw.line([(gx-4, gy), (gx+4, gy)], fill=(255, 0, 0, 150), width=1)
-                    draw.line([(gx, gy-4), (gx, gy+4)], fill=(255, 0, 0, 150), width=1)
-
-            # 4) Üst kenarda X etiketleri, sol kenarda Y etiketleri
-            for gx in range(0, w, 100):
-                draw.rectangle([(gx, 0), (gx+25, 11)], fill=(0,0,0,140))
-                draw.text((gx+1, 1), str(gx), fill=(255,255,0,220))
-            for gy in range(100, h, 100):
-                draw.rectangle([(0, gy), (25, gy+11)], fill=(0,0,0,140))
-                draw.text((1, gy+1), str(gy), fill=(255,255,0,220))
-
-            img.save(dst_path)
-        except Exception as e:
-            print(f"[Agent] Marker hatası: {e}")
-            import shutil
-            shutil.copy2(src_path, dst_path)
-
     def _ask_vision_ai(self, screenshot_path, task, history):
         w, h = self._get_screen_size()
-        screen_info = f"""\nEKRAN: {w}x{h} piksel. (0,0)=sol üst, ({w-1},{h-1})=sağ alt.
-IZGARA: Kırmızı çizgiler her 100px'de, ara tick'ler her 50px'de. Üst kenarda X, sol kenarda Y sayıları sarı ile yazılı.
+        screen_info = f"""\nEKRAN: {w}x{h} piksel.
+DİKKAT: Ekrandaki tıklanabilir nesnelerin etrafı yeşil kutularla çevrilmiş ve yanlarına [1], [2] gibi sarı numaralar eklenmiştir.
 
-KOORDİNAT TAHMİNİ NASIL YAPILIR:
-1. Hedefin en yakınındaki ızgara kesişim noktasını bul (örn: 300,400)
-2. Hedef o noktadan kaç piksel sağda/solda ve aşağıda/yukarıda?
-3. Örnek: Kesişim (300,400), hedef onun 17px sağında 12px aşağısında → koordinat (317, 412)
-4. Sadece 100'ün katlarını DEĞİL, 317, 412, 563 gibi kesin değerleri dön.
-HEDEFİN TAM MERKEZİNE tıkla — kenara veya köşeye değil."""
+NASIL AKSİYON ALINIR:
+1. Gözünle ekrana bak, hedefini bul.
+2. Hedefin üzerindeki SARI KUTU NUMARASINI oku.
+3. "click", "type_text", "double_click" veya "right_click" yapacaksan x ve y parametreleri yerine sadece "element_id" dön!
+4. Örnek: Hedef [12] numarada ise → {{"action": "type_text", "element_id": 12, "text": "Pardus"}}
+ASLA PİKSEL TAHMİNİ YAPMA (x, y kullanma)! Sadece numaraları kullan."""
 
         # Son 2 adımı göster (daha fazlası AI'ı karıştırıyor)
         history_text = ""
@@ -412,12 +494,13 @@ Her tıklamada hedefin TAM MERKEZİNİ bul. Kenara veya köşeye değil, ortası
         action_match = re.search(r'"action"\s*:\s*"([^"]+)"', response)
         action = action_match.group(1) if action_match else "done"
         
-        # Önce x ve y'yi ayrı ayrı ara
         x_match = re.search(r'"x"\s*:\s*(\d+)', response)
         y_match = re.search(r'"y"\s*:\s*(\d+)', response)
+        id_match = re.search(r'"element_id"\s*:\s*(\d+)', response)
         
         x_val = int(x_match.group(1)) if x_match else None
         y_val = int(y_match.group(1)) if y_match else None
+        id_val = int(id_match.group(1)) if id_match else None
         
         # Eğer y bulunamadıysa ama x'ten sonra virgül ve sayı varsa (ör: "x": 228, 958])
         if x_val is not None and y_val is None:
@@ -431,46 +514,28 @@ Her tıklamada hedefin TAM MERKEZİNİ bul. Kenara veya köşeye değil, ortası
         key_match = re.search(r'"key"\s*:\s*"([^"]+)"', response)
         thought_match = re.search(r'"thought"\s*:\s*"([^"]+)"', response)
         
-        if action in ["click", "double_click", "move", "scroll"] and x_val is not None and y_val is not None:
-            return {
-                "action": action,
-                "x": x_val,
-                "y": y_val,
-                "thought": thought_match.group(1) if thought_match else "Regex kurtarma başarılı."
-            }
-        elif action in ["type", "press", "hotkey"]:
-            return {
+        if action in ["click", "double_click", "move_to", "scroll", "right_click"]:
+            ret = {"action": action, "thought": thought_match.group(1) if thought_match else "Regex kurtarma başarılı."}
+            if id_val is not None:
+                ret["element_id"] = id_val
+            if x_val is not None: ret["x"] = x_val
+            if y_val is not None: ret["y"] = y_val
+            return ret
+        elif action in ["type_text", "type", "press_key", "press", "hotkey"]:
+            ret = {
                 "action": action,
                 "text": text_match.group(1) if text_match else "",
                 "key": key_match.group(1) if key_match else "",
                 "thought": thought_match.group(1) if thought_match else "Regex kurtarma başarılı."
             }
+            if id_val is not None:
+                ret["element_id"] = id_val
+            return ret
             
         return {"action": "done", "summary": "AI yanıtı işlenemedi: " + response[:100], "thought": "Parse hatası"}
 
     def _adjust_for_repeated_click(self, x, y):
-        """Aynı bölgeye tekrar tıklanırsa otomatik olarak farklı yönlere kaydır."""
-        if not self._failed_clicks:
-            return x, y
-
-        # Son tıklamalarla karşılaştır — 40px yakınında mı?
-        THRESHOLD = 40
-        offsets = [(35, 0), (0, 35), (-35, 0), (0, -35),  # sağ, aşağı, sol, yukarı
-                   (25, 25), (-25, 25), (25, -25), (-25, -25)]  # çaprazlar
-
-        repeat_count = 0
-        for (px, py) in self._failed_clicks:
-            if abs(x - px) < THRESHOLD and abs(y - py) < THRESHOLD:
-                repeat_count += 1
-
-        if repeat_count > 0:
-            idx = (repeat_count - 1) % len(offsets)
-            ox, oy = offsets[idx]
-            new_x = max(0, min(x + ox, self._get_screen_size()[0] - 1))
-            new_y = max(0, min(y + oy, self._get_screen_size()[1] - 1))
-            print(f"[Agent] ⚠️ Tekrar tıklama algılandı ({x},{y}) → düzeltme: ({new_x},{new_y}) [deneme #{repeat_count}]")
-            return new_x, new_y
-
+        """Kapatıldı: Eski sistemde aynı yere tıklanırsa koordinat kaydırılıyordu, bu hassasiyeti bozduğu için iptal edildi."""
         return x, y
 
     def _refine_click_coords(self, x, y, thought=""):
@@ -596,26 +661,41 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
         # Tıklama dışı aksiyonlarda başarısız listesini temizle
         if action not in ("click", "double_click", "right_click", "move_to"):
             self._failed_clicks = []
+            
+        def _get_coords(action_data):
+            # Element ID varsa sözlükten (X,Y) çek
+            if "element_id" in action_data:
+                eid = _safe_int(action_data["element_id"])
+                if eid in self._current_elements:
+                    return self._current_elements[eid]["x"], self._current_elements[eid]["y"]
+                else:
+                    print(f"[Agent] HATA: {eid} numaralı element bulunamadı! Eski değerlere düşülüyor.")
+            return _safe_int(action_data.get("x", 0)), _safe_int(action_data.get("y", 0))
 
         try:
             if action == "click":
-                x, y = _safe_int(action_data.get("x", 0)), _safe_int(action_data.get("y", 0))
+                x, y = _get_coords(action_data)
                 self._save_click_debug(x, y, thought)
-                x, y = self._adjust_for_repeated_click(x, y)
                 inp.click(x, y)
                 self._failed_clicks.append((x, y))
 
             elif action == "double_click":
-                x, y = _safe_int(action_data.get("x", 0)), _safe_int(action_data.get("y", 0))
+                x, y = _get_coords(action_data)
                 self._save_click_debug(x, y, thought)
-                x, y = self._adjust_for_repeated_click(x, y)
                 inp.double_click(x, y)
                 self._failed_clicks.append((x, y))
 
             elif action == "right_click":
-                inp.click(_safe_int(action_data.get("x", 0)), _safe_int(action_data.get("y", 0)), button="right")
+                x, y = _get_coords(action_data)
+                inp.click(x, y, button="right")
 
             elif action == "type_text":
+                # Eğer element_id verildiyse, yazmadan önce o kutuya tıkla ve odaklan
+                if "element_id" in action_data:
+                    x, y = _get_coords(action_data)
+                    if x != 0 and y != 0:
+                        inp.click(x, y)
+                        time.sleep(0.5) # İmlecin yanıp sönmeye başlamasını bekle
                 inp.type_text(action_data.get("text", ""))
 
             elif action == "hotkey":
@@ -632,7 +712,8 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
                 inp.scroll(action_data.get("direction", "down"), _safe_int(action_data.get("amount", 3), 3))
 
             elif action == "move_to":
-                inp.move_to(_safe_int(action_data.get("x", 0)), _safe_int(action_data.get("y", 0)))
+                x, y = _get_coords(action_data)
+                inp.move_to(x, y)
 
             elif action == "wait":
                 time.sleep(min(float(action_data.get("seconds", 1)), 10))
@@ -667,6 +748,7 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
     def _agent_loop(self):
         try:
             time.sleep(1)
+            error_count = 0
             while self.current_step < self.max_steps:
                 if self._stop_event.is_set():
                     break
@@ -676,6 +758,8 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
                 if not screenshot_path:
                     self._add_step("error", "Ekran görüntüsü alınamadı", {})
                     time.sleep(2)
+                    error_count += 1
+                    if error_count > 3: break
                     continue
 
                 response = self._ask_vision_ai(screenshot_path, self.task, self.steps)
@@ -683,6 +767,17 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
                     break
 
                 action_data = self._parse_action(response)
+                
+                # Eğer ardışık hatalar oluyorsa (sonsuz döngüyü önle)
+                if action_data.get("action") in ["unknown", "error", "done"]:
+                    error_count += 1
+                else:
+                    error_count = 0
+                    
+                if error_count > 4:
+                    self._add_step("error", "Üst üste çok fazla hata alındı, ajan durduruluyor.", {})
+                    break
+
                 if not self._execute_action(action_data):
                     break
 
