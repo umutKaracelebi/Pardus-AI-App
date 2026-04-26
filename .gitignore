@@ -14,8 +14,9 @@ ai_files/config.json
 .env
 
 # Proxies
-kimi_free/
-qwen_free/
+# Proxies
+# kimi_free/
+# qwen_free/
 .g4f/
 
 # OS / Editor
@@ -32,5 +33,6 @@ agent_screenshot*.png
 agent_zoom.png
 current_screen.png
 uploaded_image.png
-ai_files/
+# ai_files/
 *.safetensors
+**/node_modules/
