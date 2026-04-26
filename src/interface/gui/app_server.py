@@ -21,6 +21,7 @@ _qwen_api = None
 _puter_api = None
 _screen_capturer = None
 _computer_agent = None
+_webview_window = None
 
 def _get_api():
     global _qwen_api
@@ -542,6 +543,32 @@ def agent_start():
     task = data.get('task', '') if data else ''
     if not task:
         return jsonify({'success': False, 'error': 'Görev açıklaması gerekli.'})
+    
+    # Kendi penceremizi küçült + tüm pencereleri küçült — AI temiz masaüstü görsün
+    global _webview_window
+    try:
+        if _webview_window is not None:
+            _webview_window.minimize()
+            print("[Agent] 🪟 PyWebView penceresi küçültüldü")
+    except Exception as e:
+        print(f"[Agent] Pencere küçültme hatası: {e}")
+    
+    # Tüm pencereleri tek tek küçült
+    import subprocess, time
+    try:
+        r = subprocess.run(
+            ["bash", "-c", "xdotool search --onlyvisible --name '' 2>/dev/null"],
+            capture_output=True, text=True, timeout=3
+        )
+        for wid in r.stdout.strip().split('\n'):
+            if wid.strip():
+                subprocess.run(["xdotool", "windowminimize", wid.strip()],
+                             capture_output=True, timeout=2)
+        time.sleep(1)
+        print("[Agent] 🖥️ Tüm pencereler küçültüldü")
+    except:
+        pass
+    
     result = _get_agent().start(task)
     if 'error' in result:
         return jsonify({'success': False, 'error': result['error']})

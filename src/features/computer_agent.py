@@ -22,38 +22,68 @@ class AgentState(Enum):
     ERROR = "error"
 
 
-AGENT_SYSTEM_PROMPT = """Sen bir bilgisayar kontrol ajanısın. Kullanıcının verdiği görevi tamamlamak için bilgisayarı kontrol edeceksin.
+AGENT_SYSTEM_PROMPT = """Sen bir Pardus Linux masaüstü kontrol ajanısın. Kullanıcının verdiği görevi tamamlamak için bilgisayarı kontrol edeceksin.
 
-Her adımda sana ekranın görüntüsü gönderilecek. Sen ekranı analiz edip yapılması gereken bir SONRAKİ aksiyonu JSON formatında döneceksin.
+Her adımda sana ekranın görüntüsü gönderilecek. Yapılması gereken SONRAKİ aksiyonu JSON formatında dön.
 
-SADECE aşağıdaki aksiyonlardan birini kullan:
-
+AKSİYONLAR:
 1. Tıklama: {"action": "click", "element_id": 12, "thought": "..."}
-2. Çift tıklama: {"action": "double_click", "element_id": 12, "thought": "..."}
-3. Sağ tıklama: {"action": "right_click", "element_id": 12, "thought": "..."}
-4. Yazma: {"action": "type_text", "element_id": 12, "text": "yazılacak metin", "thought": "..."}
-5. Kısayol tuşu: {"action": "hotkey", "keys": ["ctrl", "c"], "thought": "..."}
-6. Tek tuş basma: {"action": "press_key", "key": "enter", "thought": "..."}
-7. Kaydırma: {"action": "scroll", "direction": "down", "amount": 3, "thought": "..."}
-8. Mouse taşıma: {"action": "move_to", "element_id": 12, "thought": "..."}
+2. Tıkla ve yaz: {"action": "click", "element_id": 12, "text": "yazılacak metin", "thought": "..."}
+3. Koordinat ile tıkla (element numaralanmamışsa): {"action": "click", "x": 525, "y": 400, "thought": "..."}
+4. Çift tıklama: {"action": "double_click", "element_id": 12, "thought": "..."}
+5. Sağ tıklama: {"action": "right_click", "element_id": 12, "thought": "..."}
+6. Kısayol tuşu: {"action": "hotkey", "keys": ["ctrl", "c"], "thought": "..."}
+7. Tek tuş basma: {"action": "press_key", "key": "enter", "thought": "..."}
+8. Kaydırma: {"action": "scroll", "direction": "down", "amount": 3, "thought": "..."}
 9. Bekleme: {"action": "wait", "seconds": 2, "thought": "..."}
 10. Görev tamamlandı: {"action": "done", "summary": "Ne yapıldığının özeti", "thought": "..."}
 
-KOORDİNAT & TIKLAMA KURALLARI:
-- DİKKAT: Kendi içsel piksel tahminini, normalize (0-1000) veya bounding box koordinat sistemini KESİNLİKLE KULLANMA! x ve y DEĞERİ DÖNME.
-- Resmin üzerinde yeşil kutularla çevrelenmiş nesneler ve siyah arka planlı SARI RENKLİ NUMARALAR [1], [2], [3] var.
-- Tıklamak istediğin öğenin üzerindeki Numarayı (ID) bul ve bunu "element_id" olarak gönder.
-- Yazı yazmak istediğinde de "element_id" parametresini mutlaka gönder! Böylece ajan önce arama kutusuna tıklar, sonra yazıyı yazar.
-- Örnek: Eğer hedefin yanındaki sarı yazıda [45] yazıyorsa, {"action": "click", "element_id": 45} dönmelisin.
+Ekran çözünürlüğü: 1366x768 piksel. x,y koordinatları bu aralıkta olmalı.
+
+KOORDİNAT KURALLARI:
+- Ekrandaki tıklanabilir öğelerin etrafı YEŞİL KUTULARLA çevrilmiş ve yanlarına SARI NUMARALAR [1], [2], [3] eklenmiştir.
+- Tıklamak istediğin öğenin SARI NUMARASINI bul ve "element_id" olarak gönder.
+- Öncelikle element_id kullan. Eğer tıklamak istediğin alan numaralanmamışsa (yeşil kutu yoksa), x ve y koordinatlarını tahmin edebilirsin:
+  {"action": "click", "x": 525, "y": 400, "thought": "Numaralanmamış kart alanına tıklıyorum"}
+- Büyük bir yeşil kutu [12] gibi bir alanın İÇİNDE daha küçük tıklanabilir öğeler olabilir. Kartın sol tarafına tıklamak için x,y kullan.
+
+YAZI YAZMA:
+- Bir metin alanına yazı yazman gerekiyorsa click aksiyonuna "text" alanı ekle.
+- Örnek: {"action": "click", "element_id": 9, "text": "merhaba dünya", "thought": "Arama kutusuna yazıyorum"}
+
+GÖREV TAMAMLAMA:
+- Her adımda ekrana bak ve görevin tamamlanıp tamamlanmadığını değerlendir.
+- Tamamlandıysa hemen done dön. Aynı şeyi tekrar yapma.
+- Görevde birden fazla adım varsa (örn: "X aç ve Y yap"), X tamamlandıysa Y'ye geç. X'i tekrar yapma.
+- Bir uygulama zaten açıksa, onu tekrar aramaya ÇALIŞMA. Uygulama içinde görevin geri kalanına devam et.
+- "Pardus Mağaza" veya "Yazılım Merkezi" açıksa, arama kutusuna "yazılım merkezi" YAZMA. Doğrudan uygulama içinde çalış.
+- Aynı element_id'ye arka arkaya 2 kez tıkladıysan, ekran değişmemiş demektir. Farklı bir element dene.
+- "Yükle", "İndir", "Kur" gibi bir butona bastıktan sonra {"action": "wait", "seconds": 3} gönder.
+- BİR TANE indirme/yükleme başlattıktan sonra HEMEN done dön. Birden fazla şey indirme!
+- Uygulama açtıktan sonra {"action": "wait", "seconds": 3} gönder ki uygulama tam yüklensin.
+- Firefox'ta adres çubuğuna yazmak için önce Ctrl+L bas (adres çubuğunu odaklar), sonra yaz.
+
+UYGULAMA AÇMA (ÇOK ÖNEMLİ!):
+- Dock bar'daki ikonlara ASLA tıklama. Dock'taki hiçbir öğeye tıklama.
+- Uygulama açmak için İLK ADIM OLARAK: {"action": "hotkey", "keys": ["super"]} gönder.
+- DİKKAT: Super tuşu toggle'dır! Bir kez basınca menü açılır, tekrar basınca KAPANIR. Super'e sadece 1 KEZ bas.
+- Açılan ekranda üstte "Yazarak ara" kutusu var. O kutuya TIKLA ve uygulamanın adını YAZ:
+  {"action": "click", "element_id": 1, "text": "firefox", "thought": "Arama kutusuna yazıyorum"}
+- Arama sonucunda çıkan uygulama ikonuna tıkla.
+- Uygulama açıldıktan sonra Super'e bir daha BASMA. Uygulama içinde çalışmaya devam et.
 
 GENEL KURALLAR:
 - Her yanıtta SADECE TEK BİR JSON nesnesi dön, başka hiçbir şey yazma.
-- "thought" alanında ne gördüğünü ve neden bu aksiyonu seçtiğini kısaca açıkla.
-- KULLANICIYA SORU SORMA. Ekranı kendin analiz et ve kendi kararını ver. Otonom çalış.
-- Görev tamamlandığında MUTLAKA "done" aksiyonu dön.
-- Menüler açıldıktan sonra yüklenmesi için kısa "wait" kullan.
-- Emin olmadığın durumlarda bile en mantıklı aksiyonu kendin seç ve uygula.
+- "thought" alanında ne gördüğünü ve neden bu aksiyonu seçtiğini KISA tut (en fazla 2 cümle).
+- Kararı kendin ver, otonom çalış.
+- element_id her zaman TAM SAYI (integer) olmalı, ASLA liste yazma. Doğru: "element_id": 2  Yanlış: "element_id": [2]
+- Masaüstündeki ikonları ve klasörleri açmak için ÇİFT TIKLAMA kullan: {"action": "double_click", "element_id": 2}
+- Dosya yöneticisinde klasör açmak için de ÇİFT TIKLAMA gerekir.
+- Aynı element_id'ye arka arkaya 2 kez tıklama! Tıkladıysan ve ekran değişmediyse farklı bir strateji dene.
+- Bir butona tıkladın ve "Kaydet" / "Save" diyalogu açıldıysa → Enter bas: {"action": "press_key", "key": "enter", "thought": "Kaydet diyalogu onaylanıyor"}
+- İndirme linki veya butonu tıkladığında indirme başladıysa → done de.
 """
+
 
 
 # ──────────────── Wayland-uyumlu Input Controller ────────────────
@@ -97,14 +127,20 @@ class WaylandInputController:
             cap_kbd = {
                 ecodes.EV_KEY: [
                     ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL, ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT,
+                    ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT, ecodes.KEY_LEFTMETA, ecodes.KEY_RIGHTMETA,
                     ecodes.KEY_V, ecodes.KEY_C, ecodes.KEY_X, ecodes.KEY_ENTER, ecodes.KEY_BACKSPACE, ecodes.KEY_ESC,
                     ecodes.KEY_UP, ecodes.KEY_DOWN, ecodes.KEY_LEFT, ecodes.KEY_RIGHT, ecodes.KEY_SPACE, ecodes.KEY_TAB,
+                    ecodes.KEY_DELETE, ecodes.KEY_HOME, ecodes.KEY_END,
+                    ecodes.KEY_F1, ecodes.KEY_F2, ecodes.KEY_F3, ecodes.KEY_F4, ecodes.KEY_F5,
+                    ecodes.KEY_F6, ecodes.KEY_F7, ecodes.KEY_F8, ecodes.KEY_F9, ecodes.KEY_F10,
+                    ecodes.KEY_F11, ecodes.KEY_F12,
                     ecodes.KEY_Q, ecodes.KEY_W, ecodes.KEY_E, ecodes.KEY_R, ecodes.KEY_T, ecodes.KEY_Y, ecodes.KEY_U,
                     ecodes.KEY_I, ecodes.KEY_O, ecodes.KEY_P, ecodes.KEY_A, ecodes.KEY_S, ecodes.KEY_D, ecodes.KEY_F,
                     ecodes.KEY_G, ecodes.KEY_H, ecodes.KEY_J, ecodes.KEY_K, ecodes.KEY_L, ecodes.KEY_Z, ecodes.KEY_X,
                     ecodes.KEY_C, ecodes.KEY_V, ecodes.KEY_B, ecodes.KEY_N, ecodes.KEY_M,
                     ecodes.KEY_1, ecodes.KEY_2, ecodes.KEY_3, ecodes.KEY_4, ecodes.KEY_5,
-                    ecodes.KEY_6, ecodes.KEY_7, ecodes.KEY_8, ecodes.KEY_9, ecodes.KEY_0
+                    ecodes.KEY_6, ecodes.KEY_7, ecodes.KEY_8, ecodes.KEY_9, ecodes.KEY_0,
+                    ecodes.KEY_MINUS, ecodes.KEY_EQUAL, ecodes.KEY_DOT, ecodes.KEY_COMMA, ecodes.KEY_SLASH,
                 ]
             }
             self._keyboard = UInput(events=cap_kbd, name='Virtual Keyboard')
@@ -181,7 +217,8 @@ class WaylandInputController:
 
     def double_click(self, x, y):
         self.click(x, y)
-        time.sleep(0.12)
+        time.sleep(0.08)
+        # İkinci tıklama — move_to tekrar gerekli çünkü birinci click cursor'ı oynatıyor
         self.click(x, y)
 
     def scroll(self, direction="down", amount=3):
@@ -197,52 +234,171 @@ class WaylandInputController:
     
     def _set_clipboard(self, text):
         import subprocess, shutil
+        
+        # Wayland environment
+        env = os.environ.copy()
+        env.setdefault("WAYLAND_DISPLAY", "wayland-0")
+        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+        
+        # wl-copy dene
         if shutil.which("wl-copy"):
-            subprocess.run(["wl-copy"], input=text.encode('utf-8'))
-        elif shutil.which("xclip"):
-            subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode('utf-8'))
-        elif shutil.which("xsel"):
-            subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode('utf-8'))
-        else:
-            print("[Agent] wl-copy bulunamadı, xdotool ile clipboard deneniyor...")
-            subprocess.run(["xdotool", "type", "--delay", "10", text], env=self._env, check=False)
+            try:
+                subprocess.run(["wl-copy", "--type", "text/plain"], 
+                             input=text.encode('utf-8'), env=env, timeout=2, 
+                             capture_output=True, check=True)
+                print(f"[Agent] Panoya kopyalandı (wl-copy): '{text[:50]}'")
+                return
+            except Exception as e:
+                print(f"[Agent] wl-copy başarısız: {e}")
+        
+        # xclip dene
+        if shutil.which("xclip"):
+            try:
+                subprocess.run(["xclip", "-selection", "clipboard"], 
+                             input=text.encode('utf-8'), timeout=2, check=True)
+                print(f"[Agent] Panoya kopyalandı (xclip): '{text[:50]}'")
+                return
+            except Exception as e:
+                print(f"[Agent] xclip başarısız: {e}")
+        
+        # xsel dene
+        if shutil.which("xsel"):
+            try:
+                subprocess.run(["xsel", "--clipboard", "--input"], 
+                             input=text.encode('utf-8'), timeout=2, check=True)
+                print(f"[Agent] Panoya kopyalandı (xsel): '{text[:50]}'")
+                return
+            except Exception as e:
+                print(f"[Agent] xsel başarısız: {e}")
+        
+        raise RuntimeError("Hiçbir pano aracı çalışmadı")
     
     def type_text(self, text):
         if not text:
             return
         self._ensure_pointer()
-        
-        # 1. Native Wayland aracı (wtype) kuruluysa onu kullan (EN GÜVENLİ)
-        import shutil, subprocess
-        if shutil.which("wtype"):
-            try:
-                subprocess.run(["wtype", text], check=True)
-                print(f"[Agent] wtype ile yazıldı: {text}")
-                return
-            except Exception as e:
-                print(f"[Agent] wtype hatası: {e}")
-                
-        # 2. wtype yoksa Pano + Ctrl-V taktiği (YEDEK)
-        self._set_clipboard(text)
-        time.sleep(0.2)  # Panonun senkronize olmasını bekle
+        print(f"[Agent] type_text: '{text}'")
         
         from evdev import ecodes
-        # Ctrl bas
-        self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1)
+        
+        # Modifier'ları temizle (Super/Meta HARİÇ — Activities'i kapatmasın)
+        for key in [ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL, ecodes.KEY_LEFTSHIFT, 
+                     ecodes.KEY_RIGHTSHIFT, ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT]:
+            self._keyboard.write(ecodes.EV_KEY, key, 0)
         self._keyboard.syn()
-        time.sleep(0.05) # GNOME'un algılaması için biraz bekle
-        # V bas
-        self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_V, 1)
-        self._keyboard.syn()
-        time.sleep(0.05)
-        # V bırak
-        self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_V, 0)
-        self._keyboard.syn()
-        time.sleep(0.02)
-        # Ctrl bırak
-        self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0)
-        self._keyboard.syn()
-        time.sleep(0.05)
+        time.sleep(0.15)
+        
+        # YÖNTEM 1: wtype (Wayland native)
+        try:
+            result = subprocess.run(["wtype", text], capture_output=True, timeout=5)
+            if result.returncode == 0:
+                print(f"[Agent] type_text (wtype) OK: '{text}'")
+                return
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            print(f"[Agent] wtype başarısız: {e}")
+        
+        # YÖNTEM 2: Pano + Ctrl+V (click+text akışında çalışıyor!)
+        try:
+            self._set_clipboard(text)
+            time.sleep(0.3)
+            
+            self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1)
+            self._keyboard.syn()
+            time.sleep(0.08)
+            self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_V, 1)
+            self._keyboard.syn()
+            time.sleep(0.08)
+            self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_V, 0)
+            self._keyboard.syn()
+            time.sleep(0.05)
+            self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0)
+            self._keyboard.syn()
+            time.sleep(0.1)
+            print(f"[Agent] type_text (pano+Ctrl+V) OK: '{text}'")
+            # Debug log
+            log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "agent_debug.log")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"TYPE_METHOD: pano+Ctrl+V kullanıldı: '{text}'\n")
+        except Exception as e:
+            print(f"[Agent] Pano başarısız ({e}), evdev raw deneniyor...")
+            log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "agent_debug.log")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"TYPE_METHOD: pano BAŞARISIZ ({e}), evdev raw deneniyor\n")
+            self.type_text_raw(text)
+
+    def type_text_raw(self, text):
+        """Karakter karakter yaz — önce xdotool dener, sonra evdev."""
+        if not text:
+            return
+        
+        # xdotool type dene (X11, Wayland'da çalışmayabilir)
+        try:
+            result = subprocess.run(
+                ["xdotool", "type", "--clearmodifiers", "--delay", "50", text],
+                capture_output=True, timeout=5,
+                env={**os.environ, 'DISPLAY': ':0'}
+            )
+            if result.returncode == 0:
+                print(f"[Agent] type_text_raw (xdotool): '{text}'")
+                return
+        except:
+            pass
+        
+        self._ensure_pointer()
+        from evdev import ecodes
+        
+        # Türkçe karakter → ASCII dönüşüm (GNOME arama için yeterli)
+        char_map = {
+            'a': (ecodes.KEY_A, False), 'b': (ecodes.KEY_B, False), 'c': (ecodes.KEY_C, False),
+            'd': (ecodes.KEY_D, False), 'e': (ecodes.KEY_E, False), 'f': (ecodes.KEY_F, False),
+            'g': (ecodes.KEY_G, False), 'h': (ecodes.KEY_H, False), 'i': (ecodes.KEY_I, False),
+            'j': (ecodes.KEY_J, False), 'k': (ecodes.KEY_K, False), 'l': (ecodes.KEY_L, False),
+            'm': (ecodes.KEY_M, False), 'n': (ecodes.KEY_N, False), 'o': (ecodes.KEY_O, False),
+            'p': (ecodes.KEY_P, False), 'q': (ecodes.KEY_Q, False), 'r': (ecodes.KEY_R, False),
+            's': (ecodes.KEY_S, False), 't': (ecodes.KEY_T, False), 'u': (ecodes.KEY_U, False),
+            'v': (ecodes.KEY_V, False), 'w': (ecodes.KEY_W, False), 'x': (ecodes.KEY_X, False),
+            'y': (ecodes.KEY_Y, False), 'z': (ecodes.KEY_Z, False),
+            '0': (ecodes.KEY_0, False), '1': (ecodes.KEY_1, False), '2': (ecodes.KEY_2, False),
+            '3': (ecodes.KEY_3, False), '4': (ecodes.KEY_4, False), '5': (ecodes.KEY_5, False),
+            '6': (ecodes.KEY_6, False), '7': (ecodes.KEY_7, False), '8': (ecodes.KEY_8, False),
+            '9': (ecodes.KEY_9, False),
+            ' ': (ecodes.KEY_SPACE, False), '-': (ecodes.KEY_MINUS, False),
+            '.': (ecodes.KEY_DOT, False), ',': (ecodes.KEY_COMMA, False),
+            '/': (ecodes.KEY_SLASH, False),
+            # Türkçe karakter destekleri (ASCII eşdeğerine çevirerek GNOME'da aramayı sağlar)
+            'ı': (ecodes.KEY_I, False), 'i̇': (ecodes.KEY_I, False),
+            'ş': (ecodes.KEY_S, False), 'ğ': (ecodes.KEY_G, False),
+            'ü': (ecodes.KEY_U, False), 'ö': (ecodes.KEY_O, False),
+            'ç': (ecodes.KEY_C, False),
+        }
+        
+        print(f"[Agent] type_text_raw (evdev): '{text}'")
+        for char in text.lower():
+            if char in char_map:
+                keycode, shift = char_map[char]
+                if shift:
+                    self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_LEFTSHIFT, 1)
+                    self._keyboard.syn()
+                    time.sleep(0.03)
+                
+                self._keyboard.write(ecodes.EV_KEY, keycode, 1)
+                self._keyboard.syn()
+                time.sleep(0.05)
+                self._keyboard.write(ecodes.EV_KEY, keycode, 0)
+                self._keyboard.syn()
+                
+                if shift:
+                    time.sleep(0.03)
+                    self._keyboard.write(ecodes.EV_KEY, ecodes.KEY_LEFTSHIFT, 0)
+                    self._keyboard.syn()
+                
+                time.sleep(0.08)  # Tuşlar arası bekleme — GNOME'un yakalaması için
+            else:
+                # Bilinmeyen karakter, atla
+                print(f"[Agent] Karakter atlandı: '{char}'")
+        print(f"[Agent] type_text_raw tamamlandı")
 
     def press_key(self, key):
         if not key: return
@@ -264,9 +420,55 @@ class WaylandInputController:
             time.sleep(0.05)
 
     def hotkey(self, keys):
+        """Tuş kombinasyonu gönder (örn: ['ctrl', 'c'], ['super'], ['alt', 'f4'])."""
         if not keys: return
-        # Şimdilik sadece metin yazma ve enter/backspace yetiyor.
-        pass
+        self._ensure_pointer()
+        from evdev import ecodes
+        
+        keymap = {
+            "ctrl": ecodes.KEY_LEFTCTRL, "control": ecodes.KEY_LEFTCTRL,
+            "alt": ecodes.KEY_LEFTALT,
+            "shift": ecodes.KEY_LEFTSHIFT,
+            "super": ecodes.KEY_LEFTMETA, "meta": ecodes.KEY_LEFTMETA, "win": ecodes.KEY_LEFTMETA,
+            "enter": ecodes.KEY_ENTER, "return": ecodes.KEY_ENTER,
+            "tab": ecodes.KEY_TAB, "escape": ecodes.KEY_ESC, "esc": ecodes.KEY_ESC,
+            "backspace": ecodes.KEY_BACKSPACE, "delete": ecodes.KEY_DELETE,
+            "up": ecodes.KEY_UP, "down": ecodes.KEY_DOWN,
+            "left": ecodes.KEY_LEFT, "right": ecodes.KEY_RIGHT,
+            "space": ecodes.KEY_SPACE,
+            "f1": ecodes.KEY_F1, "f2": ecodes.KEY_F2, "f3": ecodes.KEY_F3, "f4": ecodes.KEY_F4,
+            "f5": ecodes.KEY_F5, "f11": ecodes.KEY_F11, "f12": ecodes.KEY_F12,
+        }
+        # Tek harfler: a-z
+        for c in "abcdefghijklmnopqrstuvwxyz":
+            keymap[c] = getattr(ecodes, f"KEY_{c.upper()}")
+        
+        ev_keys = []
+        for k in keys:
+            ev = keymap.get(k.lower())
+            if ev:
+                ev_keys.append(ev)
+            else:
+                print(f"[Agent] Bilinmeyen hotkey tuşu: {k}")
+        
+        if not ev_keys:
+            return
+        
+        # Tüm tuşları bas
+        for ev in ev_keys:
+            self._keyboard.write(ecodes.EV_KEY, ev, 1)
+            self._keyboard.syn()
+            time.sleep(0.05)
+        
+        time.sleep(0.1)
+        
+        # Tüm tuşları bırak (ters sıra)
+        for ev in reversed(ev_keys):
+            self._keyboard.write(ecodes.EV_KEY, ev, 0)
+            self._keyboard.syn()
+            time.sleep(0.05)
+        
+        print(f"[Agent] ⌨️ Hotkey gönderildi: {keys}")
 
     def close(self):
         if getattr(self, '_pointer', None):
@@ -293,7 +495,7 @@ class ComputerAgent:
         self.state = AgentState.IDLE
         self.task = ""
         self.steps = []
-        self.max_steps = 50
+        self.max_steps = 999999  # Sınırsız
         self.current_step = 0
         self.thread = None
         self.user_response = None
@@ -400,12 +602,70 @@ class ComputerAgent:
             self.steps.append(step)
         print(f"[Agent] Adım {self.current_step}: {action} — {thought[:80]}")
         # Kullanıcının ajanın ne yapmaya çalıştığını görmesi için bildirim gönder
+        #     import subprocess
+        #     safe_thought = thought.replace('"', '').replace("'", "")
+        #     subprocess.run(["notify-send", "-t", "3000", f"AI Aksiyonu: {action}", safe_thought], check=False)
+        # except:
+        #     pass
+
+    def _check_task_done(self, task):
+        """Ekrana bakarak görevin tamamlanıp tamamlanmadığını kontrol et."""
         try:
-            import subprocess
-            safe_thought = thought.replace('"', '').replace("'", "")
-            subprocess.run(["notify-send", "-t", "3000", f"AI Aksiyonu: {action}", safe_thought], check=False)
-        except:
-            pass
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            screenshot = os.path.join(project_root, "agent_screenshot.png")
+            if not os.path.exists(screenshot):
+                return False
+            
+            # Minimum 5 adım geçmeden kontrol yapma
+            if self.current_step < 5:
+                return False
+            
+            # Yapılan adımları özetle
+            done_steps = []
+            for s in self.steps[-5:]:
+                if s['action'] in ('click', 'typed', 'type_text'):
+                    detail = s.get('thought', '')
+                    if 'text' in s.get('params', {}):
+                        detail += f" (yazıldı: {s['params']['text']})"
+                    done_steps.append(f"- {s['action']}: {detail}")
+            steps_summary = "\n".join(done_steps) if done_steps else "Henüz adım yok"
+            
+            # İndirme görevi için özel kontrol
+            task_lower = task.lower()
+            is_download_task = any(kw in task_lower for kw in ["indir", "yükle", "kur", "install", "download"])
+            
+            if is_download_task:
+                check_prompt = f"""GÖREV: {task}
+
+YAPILAN ADIMLAR:
+{steps_summary}
+
+Ekrana DİKKATLİCE bak. Aşağıdaki SOMUT kanıtlardan en az birini görüyor musun?
+1. İndirme progress barı veya yüzde göstergesi
+2. "İndiriliyor..." veya "Downloading..." yazısı
+3. Dosya boyutu bilgisi (MB/GB)
+4. İndirme diyalogu (kaydet penceresi)
+5. "Yükleniyor" spinner'ı
+
+SADECE bu somut kanıtlardan birini GERÇEKTEN görüyorsan EVET yaz.
+Sadece bir butona tıklanmış olması YETERLİ DEĞİL.
+Emin değilsen HAYIR yaz."""
+            else:
+                check_prompt = f"""GÖREV: {task}
+
+YAPILAN ADIMLAR:
+{steps_summary}
+
+Ekrana bak. Bu görev tamamlandı mı?
+Sadece EVET veya HAYIR yaz."""
+
+            response = self.vision_api.generate_vision_response(check_prompt, screenshot)
+            answer = response.strip().upper().replace('"', '').replace("'", "")
+            print(f"[Agent] Done check: '{answer}'")
+            return "EVET" in answer or "YES" in answer
+        except Exception as e:
+            print(f"[Agent] Done check hatası: {e}")
+            return False
 
     def _take_screenshot(self):
         os.environ.setdefault('DISPLAY', ':0')
@@ -428,33 +688,29 @@ class ComputerAgent:
     def _ask_vision_ai(self, screenshot_path, task, history):
         w, h = self._get_screen_size()
         screen_info = f"""\nEKRAN: {w}x{h} piksel.
-DİKKAT: Ekrandaki tıklanabilir nesnelerin etrafı yeşil kutularla çevrilmiş ve yanlarına [1], [2] gibi sarı numaralar eklenmiştir.
+Öğelerin etrafında YEŞİL KUTULAR ve SARI NUMARALAR [1], [2], [3] var. Tıklamak için element_id kullan.
+Yazı yazmak gerekiyorsa click aksiyonuna "text" alanı ekle."""
 
-NASIL AKSİYON ALINIR:
-1. Gözünle ekrana bak, hedefini bul.
-2. Hedefin üzerindeki SARI KUTU NUMARASINI oku.
-3. "click", "type_text", "double_click" veya "right_click" yapacaksan x ve y parametreleri yerine sadece "element_id" dön!
-4. Örnek: Hedef [12] numarada ise → {{"action": "type_text", "element_id": 12, "text": "Pardus"}}
-ASLA PİKSEL TAHMİNİ YAPMA (x, y kullanma)! Sadece numaraları kullan."""
-
-        # Son 2 adımı göster (daha fazlası AI'ı karıştırıyor)
+        # Son 4 adımı göster
         history_text = ""
         if history and len(history) > 0:
-            recent = history[-2:]
+            recent = history[-4:]
             lines = []
             for s in recent:
-                coords = ""
-                if 'x' in s.get('params', {}) and 'y' in s.get('params', {}):
-                    coords = f" @ ({s['params']['x']},{s['params']['y']})"
-                lines.append(f"Adım {s['step']}: {s['action']}{coords}")
-            history_text = "\nSon adımlar: " + " → ".join(lines)
+                detail = ""
+                if 'text' in s.get('params', {}):
+                    detail = f' → yazıldı: "{s["params"]["text"]}"'
+                elif 'x' in s.get('params', {}) and 'y' in s.get('params', {}):
+                    detail = f" @ ({s['params']['x']},{s['params']['y']})"
+                lines.append(f"Adım {s['step']}: {s['action']}{detail}")
+            history_text = "\nYAPILAN ADIMLAR:\n" + "\n".join(lines)
 
         prompt = f"""GÖREV: {task}
 {screen_info}
 {history_text}
 
-Ekranı dikkatlice incele. Görevi tamamlamak için sonraki TEK aksiyonu JSON olarak dön.
-Her tıklamada hedefin TAM MERKEZİNİ bul. Kenara veya köşeye değil, ortasına tıkla."""
+Ekranı dikkatlice incele. Eğer görev ZATEN TAMAMLANDIYSA hemen done dön!
+Görev henüz tamamlanmadıysa, sonraki TEK aksiyonu JSON olarak dön."""
 
         # İşaretli screenshot'u kullan (varsa)
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -533,6 +789,62 @@ Her tıklamada hedefin TAM MERKEZİNİ bul. Kenara veya köşeye değil, ortası
             return ret
             
         return {"action": "done", "summary": "AI yanıtı işlenemedi: " + response[:100], "thought": "Parse hatası"}
+
+    def _normalize_action(self, data):
+        """Parse edilmiş action verisini normalize et."""
+        # element_id liste olarak geldiyse int'e çevir
+        if "element_id" in data:
+            eid = data["element_id"]
+            if isinstance(eid, (list, tuple)):
+                eid = eid[0] if eid else 0
+            try:
+                data["element_id"] = int(eid)
+            except (ValueError, TypeError):
+                data["element_id"] = 0
+        return data
+
+    def _extract_text_from_task(self, task):
+        """Görev metninden yazılacak arama/URL metnini çıkar."""
+        task_lower = task.lower().strip()
+        
+        # "X ara" kalıbı (Türkçe)
+        patterns = [
+            r'(?:google\'?da|chromeda|internette|tarayıcıda)\s+(.+?)(?:\s+ara|\s+arat|\s+bul|$)',
+            r'ara\s+(.+?)(?:\s+sitesini|\s+sayfasını|$)',
+            r'(.+?)\s+(?:ara\b|arat\b|bul\b)',
+            r'(?:yaz|yazı yaz|metin gir)\s*[:\s]+(.+)',
+            r'(?:git|gir|aç)\s+(.+?)(?:\s+sitesine|\s+sayfasına|\s+adresine|$)',
+            r'(?:search for|search|type|write)\s+(.+)',
+        ]
+        
+        for pattern in patterns:
+            m = re.search(pattern, task_lower)
+            if m:
+                text = m.group(1).strip()
+                # Çok kısa veya çok uzun metinleri filtrele
+                if 1 < len(text) < 200:
+                    # Orijinal görevden (büyük/küçük harf korunaklı) aynı kısmı çıkar
+                    idx = task_lower.find(text)
+                    if idx >= 0:
+                        return task[idx:idx+len(text)].strip()
+                    return text
+        
+        # Kalıp bulunamazsa, görevin son kısmını al (genellikle aranacak kısım sonda olur)
+        # "chrome aç umut karaçelebi ara" → "umut karaçelebi"  
+        words = task.split()
+        # "ara", "arat", "bul" kelimesini bul ve ondan önceki kısımları al
+        for keyword in ["ara", "arat", "bul"]:
+            if keyword in [w.lower().rstrip('.,!?') for w in words]:
+                idx = next(i for i, w in enumerate(words) if w.lower().rstrip('.,!?') == keyword)
+                # keyword'den önceki kelimelerden uygulama adlarını çıkar
+                before = words[:idx]
+                # "chrome aç" gibi komutları atla
+                skip_words = {"chrome", "aç", "açık", "firefox", "tarayıcı", "google", "açıp"}
+                search_words = [w for w in before if w.lower() not in skip_words]
+                if search_words:
+                    return " ".join(search_words)
+        
+        return None
 
     def _adjust_for_repeated_click(self, x, y):
         """Kapatıldı: Eski sistemde aynı yere tıklanırsa koordinat kaydırılıyordu, bu hassasiyeti bozduğu için iptal edildi."""
@@ -669,33 +981,56 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
                 if eid in self._current_elements:
                     return self._current_elements[eid]["x"], self._current_elements[eid]["y"]
                 else:
-                    print(f"[Agent] HATA: {eid} numaralı element bulunamadı! Eski değerlere düşülüyor.")
+                    print(f"[Agent] HATA: {eid} numaralı element bulunamadı! Tıklama iptal.")
+                    return None  # Element yok → tıklama iptal
             return _safe_int(action_data.get("x", 0)), _safe_int(action_data.get("y", 0))
 
         try:
             if action == "click":
-                x, y = _get_coords(action_data)
+                coords = _get_coords(action_data)
+                if coords is None:
+                    print(f"[Agent] ⚠️ Geçersiz element, adım atlanıyor.")
+                    return True  # Devam et ama tıklama
+                x, y = coords
                 self._save_click_debug(x, y, thought)
                 inp.click(x, y)
                 self._failed_clicks.append((x, y))
+                
+                # AI click aksiyonuna "text" alanı eklediyse → tıkla + yaz
+                text = action_data.get("text", "")
+                if text and not self._stop_event.is_set():
+                    print(f"[Agent] 🔤 Click+Text algılandı: '{text}'")
+                    time.sleep(1.0)  # Odaklanma için bekle
+                    inp.type_text(text)
+                    self._add_step("typed", f"Yazıldı: {text}", {"text": text})
+                    # Debug: yazma sonucunu logla
+                    log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "agent_debug.log")
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write(f"TYPE_TEXT: '{text}' yazıldı (click+text akışı)\n")
 
             elif action == "double_click":
-                x, y = _get_coords(action_data)
+                coords = _get_coords(action_data)
+                if coords is None:
+                    return True
+                x, y = coords
                 self._save_click_debug(x, y, thought)
                 inp.double_click(x, y)
                 self._failed_clicks.append((x, y))
 
             elif action == "right_click":
-                x, y = _get_coords(action_data)
+                coords = _get_coords(action_data)
+                if coords is None:
+                    return True
+                x, y = coords
                 inp.click(x, y, button="right")
 
             elif action == "type_text":
-                # Eğer element_id verildiyse, yazmadan önce o kutuya tıkla ve odaklan
+                # Geriye uyumluluk: AI type_text gönderirse de çalışsın
                 if "element_id" in action_data:
                     x, y = _get_coords(action_data)
                     if x != 0 and y != 0:
                         inp.click(x, y)
-                        time.sleep(0.5) # İmlecin yanıp sönmeye başlamasını bekle
+                        time.sleep(0.5)
                 inp.type_text(action_data.get("text", ""))
 
             elif action == "hotkey":
@@ -703,10 +1038,14 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
                 if keys:
                     inp.hotkey(keys)
 
-            elif action == "press_key":
+            elif action in ("press_key", "press"):
                 key = action_data.get("key", "")
                 if key:
                     inp.press_key(key)
+
+            elif action in ("type_text", "type") and "element_id" not in action_data:
+                # Sadece type/type_text aksiyonu (element_id yoksa)
+                inp.type_text(action_data.get("text", ""))
 
             elif action == "scroll":
                 inp.scroll(action_data.get("direction", "down"), _safe_int(action_data.get("amount", 3), 3))
@@ -745,10 +1084,14 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
             self._add_step("error", f"Aksiyon hatası: {str(e)[:80]}", {})
             return True
 
+
+
     def _agent_loop(self):
         try:
-            time.sleep(1)
+            time.sleep(2)
             error_count = 0
+            recent_element_ids = []  # Döngü algılama için son tıklanan element_id'ler
+            
             while self.current_step < self.max_steps:
                 if self._stop_event.is_set():
                     break
@@ -766,7 +1109,48 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
                 if self._stop_event.is_set():
                     break
 
+                # Boş yanıt kontrolü — retry
+                if not response or not response.strip():
+                    print("[Agent] ⚠️ AI boş yanıt döndü, tekrar deneniyor...")
+                    error_count += 1
+                    time.sleep(2)
+                    if error_count > 3: break
+                    continue
+
+                # 🔍 TEŞHIS: Dosyaya logla
+                log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "agent_debug.log")
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(f"\n{'='*60}\n")
+                    f.write(f"ADIM {self.current_step} — {time.strftime('%H:%M:%S')}\n")
+                    f.write(f"GÖREV: {self.task}\n")
+                    f.write(f"AI YANITI:\n{response[:1000]}\n")
+
                 action_data = self._parse_action(response)
+                action_data = self._normalize_action(action_data)
+                
+                # Parse hatası kontrolü — retry
+                if action_data.get("action") == "done" and "işlenemedi" in action_data.get("summary", ""):
+                    print(f"[Agent] ⚠️ Parse hatası, tekrar deneniyor...")
+                    error_count += 1
+                    time.sleep(2)
+                    if error_count > 3: break
+                    continue
+                
+                # 🔍 TEŞHIS: Element bilgisi dosyaya
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(f"PARSED: {json.dumps(action_data, ensure_ascii=False, default=str)}\n")
+                    if "element_id" in action_data:
+                        eid = action_data["element_id"]
+                        if isinstance(eid, (list, tuple)): eid = eid[0] if eid else 0
+                        try: eid = int(eid)
+                        except: eid = 0
+                        if eid in self._current_elements:
+                            coords = self._current_elements[eid]
+                            f.write(f"ELEMENT {eid} → ({coords['x']}, {coords['y']})\n")
+                        else:
+                            f.write(f"ELEMENT {eid} BULUNAMADI! Mevcut: {list(self._current_elements.keys())[:15]}\n")
+                    f.write(f"TOPLAM ELEMENT: {len(self._current_elements)}\n")
+                    f.write(f"{'='*60}\n")
                 
                 # Eğer ardışık hatalar oluyorsa (sonsuz döngüyü önle)
                 if action_data.get("action") in ["unknown", "error", "done"]:
@@ -778,10 +1162,59 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
                     self._add_step("error", "Üst üste çok fazla hata alındı, ajan durduruluyor.", {})
                     break
 
+                # Döngü algılama: Aynı element_id tekrar tıklanıyorsa
+                if action_data.get("action") == "click" and "element_id" in action_data:
+                    eid = action_data["element_id"]
+                    if isinstance(eid, (list, tuple)): eid = eid[0] if eid else 0
+                    try: eid = int(eid)
+                    except: eid = 0
+                    recent_element_ids.append(eid)
+                    if len(recent_element_ids) > 8:
+                        recent_element_ids.pop(0)
+                    repeat_count = recent_element_ids.count(eid)
+                    if repeat_count >= 5:
+                        # 5+ tekrar → tamamen dur
+                        self._add_step("done", "Aynı öğeye çok fazla tıklandı, görev sonlandırıldı.", {})
+                        print("[Agent] ⚠️ Döngü algılandı: 5+ tekrar. Durduruluyor.")
+                        break
+                    elif repeat_count >= 3:
+                        # 3 tekrar → scroll yap, belki farklı elementler görünür
+                        print("[Agent] ⚠️ Aynı elemente 3 kez tıklandı, scroll deneniyor...")
+                        inp = self._get_input()
+                        inp.scroll("down", 3)
+                        recent_element_ids.clear()
+                        time.sleep(1)
+                        continue
+
                 if not self._execute_action(action_data):
                     break
 
-                time.sleep(1)
+                # Her aksiyondan sonra görev tamamlanma kontrolü (3. adımdan itibaren)
+                if self.current_step >= 3 and not self._stop_event.is_set():
+                    if self._check_task_done(self.task):
+                        self._add_step("done", "Görev tamamlandı.", {})
+                        self.state = AgentState.DONE
+                        print("[Agent] ✅ Görev tamamlandı algılandı.")
+                        break
+
+                # Akıllı bekleme: aksiyona göre farklı süre bekle
+                action_type = action_data.get("action", "")
+                thought_text = action_data.get("thought", "").lower()
+                
+                if action_type == "click" and any(kw in thought_text for kw in 
+                    ["açıyorum", "açacağım", "açılacak", "açmak", "tıklıyorum", "launch"]):
+                    # Uygulama açma veya sayfa navigasyonu — uzun bekle
+                    wait_time = 3.0
+                elif action_type == "click" and any(kw in thought_text for kw in 
+                    ["bağlantı", "link", "sayfa", "site", "indir", "download"]):
+                    # Link tıklama — orta bekle
+                    wait_time = 2.5
+                elif action_type == "hotkey":
+                    wait_time = 2.0
+                else:
+                    wait_time = 1.5
+                
+                time.sleep(wait_time)
 
             if self.state == AgentState.RUNNING:
                 self.state = AgentState.DONE

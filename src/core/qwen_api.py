@@ -40,7 +40,7 @@ class QwenAPI:
     """Yerel qwen-free-api sunucusuna bağlanan OpenAI-uyumlu client."""
 
     DEFAULT_MODEL = "qwen-max-latest"
-    VISION_MODEL = "qwen3-vl-plus"
+    VISION_MODEL = "qwen3-vl-max"
     MAX_RETRIES = 3
 
     def __init__(self):

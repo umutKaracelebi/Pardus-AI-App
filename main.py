@@ -96,6 +96,10 @@ def start_gui():
         text_select=True
     )
 
+    # Agent'ın pencereyi küçültebilmesi için referansı sakla
+    import src.interface.gui.app_server as srv
+    srv._webview_window = window
+
     icon_path = os.path.join(os.path.dirname(__file__), 'pardusaiapplogo.png')
     webview.start(icon=icon_path, debug=False)
 
