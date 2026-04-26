@@ -61,7 +61,7 @@ GÖREV TAMAMLAMA:
 - "Yükle", "İndir", "Kur" gibi bir butona bastıktan sonra {"action": "wait", "seconds": 3} gönder.
 - BİR TANE indirme/yükleme başlattıktan sonra HEMEN done dön. Birden fazla şey indirme!
 - Uygulama açtıktan sonra {"action": "wait", "seconds": 3} gönder ki uygulama tam yüklensin.
-- Firefox'ta adres çubuğuna yazmak için önce Ctrl+L bas (adres çubuğunu odaklar), sonra yaz.
+- Firefox açıldıktan sonra arama yapmak için ana sayfadaki "Web'de ara" kutusuna tıklayıp yaz, sonra Enter bas.
 
 UYGULAMA AÇMA (ÇOK ÖNEMLİ!):
 - Dock bar'daki ikonlara ASLA tıklama. Dock'taki hiçbir öğeye tıklama.
@@ -414,10 +414,13 @@ class WaylandInputController:
         if ev_key:
             self._keyboard.write(ecodes.EV_KEY, ev_key, 1)
             self._keyboard.syn()
-            time.sleep(0.02)
+            time.sleep(0.08)
             self._keyboard.write(ecodes.EV_KEY, ev_key, 0)
             self._keyboard.syn()
-            time.sleep(0.05)
+            time.sleep(0.15)
+            print(f"[Agent] ⌨️ press_key: {key} ({ev_key})")
+        else:
+            print(f"[Agent] ⚠️ press_key: '{key}' tanınmadı!")
 
     def hotkey(self, keys):
         """Tuş kombinasyonu gönder (örn: ['ctrl', 'c'], ['super'], ['alt', 'f4'])."""
@@ -1001,8 +1004,26 @@ SADECE JSON dön: {{"x": EKRAN_X, "y": EKRAN_Y}}"""
                 if text and not self._stop_event.is_set():
                     print(f"[Agent] 🔤 Click+Text algılandı: '{text}'")
                     time.sleep(1.0)  # Odaklanma için bekle
+                    # Önce mevcut metni temizle: Ctrl+A (hepsini seç) + Delete
+                    inp.hotkey(["ctrl", "a"])
+                    time.sleep(0.15)
+                    inp.press_key("delete")
+                    time.sleep(0.2)
+                    # Şimdi yaz
                     inp.type_text(text)
                     self._add_step("typed", f"Yazıldı: {text}", {"text": text})
+                    
+                    # Arama kutusuna yazıldıysa otomatik Enter bas
+                    # Sadece ekranın orta bölgesindeki geniş arama kutularında
+                    # (Activities hariç, form/editör alanlarını kapsamaz)
+                    element_id_val = action_data.get("element_id", 0)
+                    is_center_search = (300 < y < 500) and (400 < x < 900)  # Ekran ortası
+                    is_activities = element_id_val == 1 and y < 50
+                    if is_center_search and not is_activities:
+                        time.sleep(0.3)
+                        inp.press_key("enter")
+                        print(f"[Agent] ⏎ Otomatik Enter basıldı (arama kutusu @ {x},{y})")
+                    
                     # Debug: yazma sonucunu logla
                     log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "agent_debug.log")
                     with open(log_path, "a", encoding="utf-8") as f:

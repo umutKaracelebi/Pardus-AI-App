@@ -35,20 +35,33 @@ class ElementDetector:
         edges = cv2.Canny(gray, 50, 150)
         
         # Dilation ile birbirine yakın harfleri/kenarları birleştir
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (18, 8))
+        # (dikey 5: başlık ve açıklama ayrı kalsın, yatay 18: satır içi birleşsin)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (18, 5))
         dilated = cv2.dilate(edges, kernel, iterations=1)
         
         # Konturları bul
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         # === İKİNCİ GEÇİŞ: Düşük kontrastlı büyük kartlar için ===
-        # Bilateral filter + Canny (daha hassas)
         blur = cv2.bilateralFilter(gray, 9, 75, 75)
         edges2 = cv2.Canny(blur, 20, 80)
         kernel2 = cv2.getStructuringElement(cv2.MORPH_RECT, (12, 6))
         dilated2 = cv2.dilate(edges2, kernel2, iterations=1)
-        # RETR_TREE: iç içe konturları da bul (büyük beyaz alanın içindeki kartlar)
         contours2, _ = cv2.findContours(dilated2, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # === ÜÇÜNCÜ GEÇİŞ: Mavi/mor link başlıkları (Google dark mode) ===
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        # Mavi tonlar: H=90-130, S>50, V>80
+        blue_mask1 = cv2.inRange(hsv, (90, 50, 80), (130, 255, 255))
+        # Açık mavi/camgöbeği: H=80-100
+        blue_mask2 = cv2.inRange(hsv, (80, 40, 100), (100, 255, 255))
+        # Mor tonlar (bazı linkler): H=130-160
+        purple_mask = cv2.inRange(hsv, (130, 40, 80), (160, 255, 255))
+        link_mask = blue_mask1 | blue_mask2 | purple_mask
+        # Dilation: harfleri birleştir
+        kernel_link = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 4))
+        link_dilated = cv2.dilate(link_mask, kernel_link, iterations=1)
+        contours_link, _ = cv2.findContours(link_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         # Tüm bounding box'ları topla
         all_rects = set()
@@ -57,8 +70,12 @@ class ElementDetector:
             all_rects.add((x, y, w, h))
         for c in contours2:
             x, y, w, h = cv2.boundingRect(c)
-            # Sadece orta-büyük olanları ekle (küçükleri birinci geçiş bulmuştur)
             if w > 60 and h > 40:
+                all_rects.add((x, y, w, h))
+        for c in contours_link:
+            x, y, w, h = cv2.boundingRect(c)
+            # Link başlıkları: en az 100px geniş, 10px yüksek
+            if w > 100 and h > 10:
                 all_rects.add((x, y, w, h))
         
         bounding_boxes = list(all_rects)
