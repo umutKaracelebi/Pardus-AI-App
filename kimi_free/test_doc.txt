@@ -1,0 +1,1 @@
+Bu bir test dosyasıdır. Kimi Free API dosya yükleme testi için oluşturulmuştur. İçinde 3 madde var: 1) Elma 2) Armut 3) Portakal
