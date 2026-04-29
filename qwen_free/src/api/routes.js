@@ -449,7 +449,7 @@ function handleNonStreamingResponse(res, result, mappedModel) {
 
 router.post('/chat', async (req, res) => {
     try {
-        const { message, messages, model, chatId, parentId, stream, chatType } = req.body;
+        const { message, messages, model, chatId, parentId, stream, chatType, size } = req.body;
 
         // Поддержка как message, так и messages для совместимости
         let messageContent = message;
@@ -531,7 +531,7 @@ router.post('/chat', async (req, res) => {
                     null,
                     systemMessage,
                     chatType || 't2t',
-                    null,
+                    size || null,
                     true,
                     0,
                     streamingCallback
@@ -589,7 +589,7 @@ router.post('/chat', async (req, res) => {
             }
         }
 
-            const result = await sendMessage(messageContent, mappedModel, isMeta ? null : chatId, isMeta ? null : parentId, null, null, null, systemMessage, chatType || 't2t');
+            const result = await sendMessage(messageContent, mappedModel, isMeta ? null : chatId, isMeta ? null : parentId, null, null, null, systemMessage, chatType || 't2t', size || null);
 
         if (result.choices && result.choices[0] && result.choices[0].message) {
             const responseLength = result.choices[0].message.content ? result.choices[0].message.content.length : 0;

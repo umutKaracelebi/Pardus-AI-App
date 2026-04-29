@@ -67,8 +67,10 @@ UYGULAMA AÇMA (ÇOK ÖNEMLİ!):
 - Dock bar'daki ikonlara ASLA tıklama. Dock'taki hiçbir öğeye tıklama.
 - Uygulama açmak için İLK ADIM OLARAK: {"action": "hotkey", "keys": ["super"]} gönder.
 - DİKKAT: Super tuşu toggle'dır! Bir kez basınca menü açılır, tekrar basınca KAPANIR. Super'e sadece 1 KEZ bas.
-- Açılan ekranda üstte "Yazarak ara" kutusu var. O kutuya TIKLA ve uygulamanın adını YAZ:
+- Açılan ekranda üstte "Yazarak ara" kutusu var. O kutuya TIKLA ve uygulamanın DOĞRU ADINI YAZ:
   {"action": "click", "element_id": 1, "text": "firefox", "thought": "Arama kutusuna yazıyorum"}
+- Activities ekranındaki uygulama grid'ine (ikonlara) DOĞRUDAN TIKLAMAK YERİNE, HER ZAMAN arama kutusuna uygulamanın adını yaz.
+- LibreOffice uygulamaları açarken DOĞRU İSİM yaz: "writer" (metin), "calc" (hesap tablosu), "impress" (sunum). Sadece "libreoffice" yazma.
 - Arama sonucunda çıkan uygulama ikonuna tıkla.
 - Uygulama açıldıktan sonra Super'e bir daha BASMA. Uygulama içinde çalışmaya devam et.
 

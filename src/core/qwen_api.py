@@ -355,6 +355,141 @@ class QwenAPI:
             if os.path.exists(tmp_wav):
                 os.remove(tmp_wav)
 
+    # ─── Text-to-Image (t2i) ───────────────────────────
+
+    def generate_image(self, prompt: str, size: str = "16:9") -> dict:
+        """Metin açıklamasından görsel üret (Qwen t2i).
+
+        Returns:
+            dict: {'success': True, 'image_url': '...'} veya {'success': False, 'error': '...'}
+        """
+        payload = {
+            'message': prompt,
+            'model': self.VISION_MODEL,
+            'chatType': 't2i',
+            'size': size,
+        }
+
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                if attempt > 0:
+                    wait = 3 * attempt
+                    print(f"   ⏳ Görsel üretimi yeniden deniyor ({attempt + 1}/{self.MAX_RETRIES}), {wait}s bekleniyor...")
+                    time.sleep(wait)
+
+                r = self._session.post(
+                    f"{QWEN_API_BASE}/chat",
+                    json=payload,
+                    timeout=(10, 90),  # connect=10s, read=90s (t2i 10-30s sürer)
+                )
+
+                if r.status_code == 429:
+                    print("   ⚠️ Rate limit (t2i), bekleniyor...")
+                    time.sleep(5)
+                    continue
+                if r.status_code != 200:
+                    last_error = f"HTTP {r.status_code}: {r.text[:200]}"
+                    continue
+
+                data = r.json()
+
+                # Yanıt formatı: choices[0].message.content = resim URL'i
+                if 'choices' in data and len(data['choices']) > 0:
+                    image_url = data['choices'][0].get('message', {}).get('content', '')
+                    if image_url and image_url.startswith('http'):
+                        self.last_model_used = f"Qwen ({self.VISION_MODEL}) t2i"
+                        return {'success': True, 'image_url': image_url}
+
+                # video_url alanı da kontrol et (bazı yanıtlarda)
+                if data.get('video_url'):
+                    return {'success': True, 'image_url': data['video_url']}
+
+                last_error = f"Görsel URL'i alınamadı: {r.text[:200]}"
+
+            except requests.exceptions.Timeout:
+                last_error = f"Zaman aşımı (t2i, deneme {attempt + 1})"
+                print(f"   ⚠️ {last_error}")
+            except Exception as e:
+                last_error = str(e)
+                print(f"   ⚠️ t2i hatası: {last_error[:100]}")
+
+        return {'success': False, 'error': f"Görsel üretilemedi: {last_error}"}
+
+    # ─── Text-to-Video (t2v) ───────────────────────────
+
+    def generate_video(self, prompt: str, size: str = "16:9") -> dict:
+        """Metin açıklamasından video üret (Qwen t2v).
+
+        Server-side polling kullanır (waitForCompletion=true).
+        Video üretimi 30-120 saniye sürebilir.
+
+        Returns:
+            dict: {'success': True, 'video_url': '...'} veya {'success': False, 'error': '...'}
+        """
+        payload = {
+            'message': prompt,
+            'model': self.VISION_MODEL,
+            'chatType': 't2v',
+            'size': size,
+            'waitForCompletion': True,
+        }
+
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                if attempt > 0:
+                    wait = 5 * attempt
+                    print(f"   ⏳ Video üretimi yeniden deniyor ({attempt + 1}/{self.MAX_RETRIES}), {wait}s bekleniyor...")
+                    time.sleep(wait)
+
+                r = self._session.post(
+                    f"{QWEN_API_BASE}/chat",
+                    json=payload,
+                    timeout=(10, 210),  # connect=10s, read=210s (t2v 30-120s sürer)
+                )
+
+                if r.status_code == 429:
+                    print("   ⚠️ Rate limit (t2v), bekleniyor...")
+                    time.sleep(5)
+                    continue
+                if r.status_code != 200:
+                    last_error = f"HTTP {r.status_code}: {r.text[:200]}"
+                    continue
+
+                data = r.json()
+
+                # Hata kontrolü
+                if data.get('error'):
+                    last_error = data['error']
+                    if 'timeout' in str(last_error).lower():
+                        continue
+                    return {'success': False, 'error': str(last_error)}
+
+                # video_url alanı (birincil kaynak)
+                video_url = data.get('video_url')
+
+                # Alternatif: choices[0].message.content
+                if not video_url and 'choices' in data and len(data['choices']) > 0:
+                    content = data['choices'][0].get('message', {}).get('content', '')
+                    if content and content.startswith('http'):
+                        video_url = content
+
+                if video_url:
+                    self.last_model_used = f"Qwen ({self.VISION_MODEL}) t2v"
+                    return {'success': True, 'video_url': video_url}
+
+                last_error = f"Video URL'i alınamadı: {r.text[:300]}"
+
+            except requests.exceptions.Timeout:
+                last_error = f"Zaman aşımı (t2v, deneme {attempt + 1})"
+                print(f"   ⚠️ {last_error}")
+            except Exception as e:
+                last_error = str(e)
+                print(f"   ⚠️ t2v hatası: {last_error[:100]}")
+
+        return {'success': False, 'error': f"Video üretilemedi: {last_error}"}
+
     @staticmethod
     def is_available() -> bool:
         """Qwen Free API sunucusunun erişilebilir olup olmadığını kontrol et."""

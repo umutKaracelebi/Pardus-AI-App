@@ -15,4 +15,5 @@ addict
 matplotlib
 requests
 einops
+playwright>=1.40.0
 # flash-attn>=2.5.0 --no-build-isolation

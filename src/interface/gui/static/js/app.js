@@ -156,7 +156,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chats[id].messages.length > 0) {
             welcomeScreen.classList.add('hidden');
             messagesEl.style.display = 'flex';
-            chats[id].messages.forEach(m => addMessage(m.text, m.sender, false, m.imageDataUrl || null));
+            chats[id].messages.forEach(m => {
+                // Detect generated image/video messages and render with proper preview
+                const imgMatch = m.text.match(/^🎨 \[Üretilen Görsel\]\((.+)\)$/);
+                const vidMatch = m.text.match(/^🎬 \[Üretilen Video\]\((.+)\)$/);
+                if (m.sender === 'assistant' && imgMatch) {
+                    addGeneratedImageMessage(imgMatch[1], '', false);
+                } else if (m.sender === 'assistant' && vidMatch) {
+                    addGeneratedVideoMessage(vidMatch[1], '', false);
+                } else {
+                    addMessage(m.text, m.sender, false, m.imageDataUrl || null);
+                }
+            });
             setTimeout(scrollToBottom, 50);
         } else {
             messagesEl.style.display = 'none';
@@ -211,6 +222,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ─── Send Message ───
     const sendMessage = async (text) => {
+        // Intercept for generation mode (image/video)
+        if (typeof currentGenMode !== 'undefined' && currentGenMode !== 'chat') {
+            const handled = await handleGenSend();
+            if (handled) return;
+        }
+
         text = text || input.value.trim();
         if ((!text && !pendingImageFile && !pendingFile) || isWaiting) return;
 
@@ -897,6 +914,241 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initApp();
 
+    // ═══════════════ CONTENT GENERATION (t2i / t2v) ═══════════════
+
+    const genImageBtn    = document.getElementById('generate-image-btn');
+    const genVideoBtn    = document.getElementById('generate-video-btn');
+    const inputContainer = document.getElementById('input-container');
+    const mediaPreviewOverlay = document.getElementById('media-preview-overlay');
+    const mediaPreviewContent = document.getElementById('media-preview-content');
+    const mediaPreviewClose   = document.getElementById('media-preview-close');
+
+    let currentGenMode = 'chat'; // 'chat' | 'image' | 'video'
+    const defaultPlaceholder = "Pardus AI'a mesaj yazın...";
+
+    function activateGenMode(mode) {
+        currentGenMode = mode;
+
+        // Remove any existing gen-mode strip
+        const oldStrip = document.querySelector('.gen-mode-strip');
+        if (oldStrip) oldStrip.remove();
+
+        // Add gen-mode strip above input container
+        const strip = document.createElement('div');
+        const isImage = mode === 'image';
+        strip.className = `gen-mode-strip ${mode}`;
+        strip.innerHTML = `
+            <i class="fa-solid ${isImage ? 'fa-palette' : 'fa-film'}"></i>
+            <span>${isImage ? '🎨 Görsel üretim modu' : '🎬 Video üretim modu'}</span>
+            <button class="gen-mode-cancel" title="İptal"><i class="fa-solid fa-xmark"></i></button>
+        `;
+        inputContainer.parentNode.insertBefore(strip, inputContainer);
+
+        strip.querySelector('.gen-mode-cancel').addEventListener('click', deactivateGenMode);
+
+        // Update input styling
+        inputContainer.classList.remove('gen-mode', 'gen-mode-video');
+        inputContainer.classList.add(isImage ? 'gen-mode' : 'gen-mode-video');
+
+        // Update placeholder
+        input.placeholder = isImage
+            ? '🎨 Oluşturmak istediğiniz görseli açıklayın...'
+            : '🎬 Oluşturmak istediğiniz videoyu açıklayın...';
+
+        // Close popover
+        if (attachPopover) attachPopover.classList.add('hidden');
+        if (attachMenuBtn) attachMenuBtn.classList.remove('active');
+
+        input.focus();
+    }
+
+    function deactivateGenMode() {
+        currentGenMode = 'chat';
+        const strip = document.querySelector('.gen-mode-strip');
+        if (strip) strip.remove();
+        inputContainer.classList.remove('gen-mode', 'gen-mode-video');
+        input.placeholder = agentMode ? '🤖 Ajan için görev yazın...' : defaultPlaceholder;
+    }
+
+    if (genImageBtn) genImageBtn.addEventListener('click', () => activateGenMode('image'));
+    if (genVideoBtn) genVideoBtn.addEventListener('click', () => activateGenMode('video'));
+
+    // Generation send logic
+    async function handleGenSend() {
+        const prompt = input.value.trim();
+        if (!prompt) return false;
+        if (currentGenMode === 'chat') return false;
+
+        const mode = currentGenMode;
+        const size = '16:9'; // Default size
+
+        // Reset input
+        input.value = '';
+        input.style.height = 'auto';
+        sendBtn.disabled = true;
+        deactivateGenMode();
+
+        // Show in chat
+        welcomeScreen.classList.add('hidden');
+        messagesEl.style.display = 'flex';
+
+        const emoji = mode === 'image' ? '🎨' : '🎬';
+        const label = mode === 'image' ? 'Görsel' : 'Video';
+        addMessage(`${emoji} ${label} oluştur: "${prompt}"`, 'user');
+
+        // Progress bar
+        const typingDiv = document.createElement('div');
+        typingDiv.className = 'msg assistant';
+        const waitMsg = mode === 'image'
+            ? '🎨 Görsel oluşturuluyor... (10-30 saniye)'
+            : '🎬 Video oluşturuluyor... (1-2 dakika sürebilir)';
+        typingDiv.innerHTML = `
+            <div class="msg-avatar"><img src="/static/parduslogo.png" class="msg-avatar-logo" alt="Pardus"></div>
+            <div class="msg-bubble">
+                ${waitMsg}
+                <div class="gen-progress-bar"></div>
+            </div>
+        `;
+        messagesEl.appendChild(typingDiv);
+        scrollToBottom();
+        isWaiting = true;
+
+        try {
+            const endpoint = mode === 'image' ? '/api/generate-image' : '/api/generate-video';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, size })
+            });
+            const data = await res.json();
+
+            if (typingDiv.parentNode) typingDiv.parentNode.removeChild(typingDiv);
+
+            if (data.success) {
+                if (mode === 'image' && data.image_url) {
+                    addGeneratedImageMessage(data.image_url, prompt);
+                } else if (mode === 'video' && data.video_url) {
+                    addGeneratedVideoMessage(data.video_url, prompt);
+                } else {
+                    addMessage('⚠️ İçerik URL\'i alınamadı.', 'assistant');
+                }
+
+                if (currentChatId && chats[currentChatId] && !chats[currentChatId].title) {
+                    chats[currentChatId].title = `${emoji} ${prompt.substring(0, 30)}${prompt.length > 30 ? '...' : ''}`;
+                    saveChats();
+                    renderChatHistory();
+                }
+            } else {
+                addMessage(`⚠️ ${label} oluşturulamadı: ${data.error || 'Bilinmeyen hata'}`, 'assistant');
+            }
+        } catch (err) {
+            if (typingDiv.parentNode) typingDiv.parentNode.removeChild(typingDiv);
+            addMessage('⚠️ Bağlantı hatası: ' + err.message, 'assistant');
+        }
+
+        isWaiting = false;
+        input.focus();
+        return true;
+    }
+
+    function addGeneratedImageMessage(imageUrl, prompt, save = true) {
+        const div = document.createElement('div');
+        div.className = 'msg assistant';
+        div.innerHTML = `
+            <div class="msg-avatar"><img src="/static/parduslogo.png" class="msg-avatar-logo" alt="Pardus"></div>
+            <div class="msg-content-wrapper" style="position: relative; max-width: 100%;">
+                <div class="msg-bubble">
+                    🎨 İşte oluşturduğum görsel:<br>
+                    <img src="${escapeHTML(imageUrl)}" class="msg-generated-image" alt="Üretilen görsel">
+                    <div class="gen-action-bar">
+                        <a href="${escapeHTML(imageUrl)}" download class="gen-action-btn action-download"><i class="fa-solid fa-download"></i> İndir</a>
+                        <button class="gen-action-btn action-enlarge"><i class="fa-solid fa-expand"></i> Büyüt</button>
+                    </div>
+                </div>
+                <div class="msg-actions">
+                    <button class="msg-action-btn action-copy" title="URL Kopyala"><i class="fa-solid fa-copy"></i></button>
+                    <button class="msg-action-btn action-delete" title="Sil"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            </div>
+        `;
+        div.querySelector('.msg-generated-image').addEventListener('click', () => openMediaPreview('image', imageUrl));
+        div.querySelector('.action-enlarge').addEventListener('click', () => openMediaPreview('image', imageUrl));
+        const copyBtn = div.querySelector('.action-copy');
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(imageUrl).then(() => {
+                copyBtn.innerHTML = '<i class="fa-solid fa-check" style="color:var(--accent)"></i>';
+                setTimeout(() => copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i>', 2000);
+            });
+        });
+        div.querySelector('.action-delete').addEventListener('click', () => div.remove());
+        messagesEl.appendChild(div);
+        scrollToBottom();
+        if (save) saveMessage(`🎨 [Üretilen Görsel](${imageUrl})`, 'assistant');
+    }
+
+    function addGeneratedVideoMessage(videoUrl, prompt, save = true) {
+        const div = document.createElement('div');
+        div.className = 'msg assistant';
+        div.innerHTML = `
+            <div class="msg-avatar"><img src="/static/parduslogo.png" class="msg-avatar-logo" alt="Pardus"></div>
+            <div class="msg-content-wrapper" style="position: relative; max-width: 100%;">
+                <div class="msg-bubble">
+                    🎬 İşte oluşturduğum video:<br>
+                    <video src="${escapeHTML(videoUrl)}" class="msg-generated-video" controls preload="metadata"></video>
+                    <div class="gen-action-bar">
+                        <a href="${escapeHTML(videoUrl)}" download class="gen-action-btn action-download"><i class="fa-solid fa-download"></i> İndir</a>
+                        <button class="gen-action-btn action-enlarge"><i class="fa-solid fa-expand"></i> Büyüt</button>
+                    </div>
+                </div>
+                <div class="msg-actions">
+                    <button class="msg-action-btn action-copy" title="URL Kopyala"><i class="fa-solid fa-copy"></i></button>
+                    <button class="msg-action-btn action-delete" title="Sil"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            </div>
+        `;
+        div.querySelector('.action-enlarge').addEventListener('click', () => openMediaPreview('video', videoUrl));
+        const copyBtn = div.querySelector('.action-copy');
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(videoUrl).then(() => {
+                copyBtn.innerHTML = '<i class="fa-solid fa-check" style="color:var(--accent)"></i>';
+                setTimeout(() => copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i>', 2000);
+            });
+        });
+        div.querySelector('.action-delete').addEventListener('click', () => div.remove());
+        messagesEl.appendChild(div);
+        scrollToBottom();
+        if (save) saveMessage(`🎬 [Üretilen Video](${videoUrl})`, 'assistant');
+    }
+
+    // ─── Fullscreen media preview ───
+    function openMediaPreview(type, url) {
+        if (!mediaPreviewOverlay || !mediaPreviewContent) return;
+        if (type === 'image') {
+            mediaPreviewContent.innerHTML = `<img src="${escapeHTML(url)}" alt="Önizleme">`;
+        } else {
+            mediaPreviewContent.innerHTML = `<video src="${escapeHTML(url)}" controls autoplay></video>`;
+        }
+        mediaPreviewOverlay.classList.remove('hidden');
+    }
+
+    function closeMediaPreview() {
+        if (!mediaPreviewOverlay) return;
+        mediaPreviewOverlay.classList.add('hidden');
+        mediaPreviewContent.innerHTML = '';
+    }
+
+    if (mediaPreviewClose) mediaPreviewClose.addEventListener('click', closeMediaPreview);
+    if (mediaPreviewOverlay) {
+        mediaPreviewOverlay.addEventListener('click', (e) => {
+            if (e.target === mediaPreviewOverlay) closeMediaPreview();
+        });
+    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && mediaPreviewOverlay && !mediaPreviewOverlay.classList.contains('hidden')) {
+            closeMediaPreview();
+        }
+    });
+
     // ═══════════════ AGENT MODE ═══════════════
     const agentToggleBtn = document.getElementById('agent-toggle-btn');
     const agentPanel = document.getElementById('agent-panel');
@@ -933,7 +1185,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Override send for agent mode
     const origSendHandler = sendBtn.onclick;
     sendBtn.addEventListener('click', (e) => {
-        if (!agentMode) return; // Let normal handler run
+        if (!agentMode || browserAgentMode) return; // Let normal or browser agent handler run
         e.stopImmediatePropagation();
 
         const task = input.value.trim();
@@ -961,9 +1213,9 @@ document.addEventListener('DOMContentLoaded', () => {
         .catch(err => addMessage('⚠️ Bağlantı hatası: ' + err.message, 'assistant'));
     }, true); // Use capture to run before normal handler
 
-    // Also handle Enter key in agent mode
+    // Also handle Enter key in agent/browser-agent mode
     input.addEventListener('keydown', (e) => {
-        if (agentMode && e.key === 'Enter' && !e.shiftKey) {
+        if ((agentMode || browserAgentMode) && e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendBtn.click();
         }
@@ -1098,6 +1350,172 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = document.createElement('div');
         d.textContent = str;
         return d.innerHTML;
+    }
+
+    // ═══════════════ BROWSER AGENT MODE ═══════════════
+    const baToggleBtn = document.getElementById('browser-agent-toggle-btn');
+    const baPanel = document.getElementById('browser-agent-panel');
+    const baPulse = document.getElementById('ba-pulse');
+    const baStatusText = document.getElementById('ba-status-text');
+    const baStepCount = document.getElementById('ba-step-count');
+    const baStopBtn = document.getElementById('ba-stop-btn');
+    const baLog = document.getElementById('ba-log');
+    const baBrowserSelect = document.getElementById('ba-browser-select');
+
+    let browserAgentMode = false;
+    let baPollingInterval = null;
+    let baLastStepCount = 0;
+
+    // Sistemdeki kurulu tarayıcıları tespit et
+    function loadBrowserList() {
+        fetch('/api/browser-agent/browsers')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success || !data.browsers.length || !baBrowserSelect) return;
+            baBrowserSelect.innerHTML = '';
+            data.browsers.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b.id;
+                opt.textContent = b.label;
+                baBrowserSelect.appendChild(opt);
+            });
+        })
+        .catch(() => {});
+    }
+    loadBrowserList();
+
+    if (baToggleBtn) {
+        baToggleBtn.addEventListener('click', () => {
+            browserAgentMode = !browserAgentMode;
+            baToggleBtn.classList.toggle('active', browserAgentMode);
+            if (baPanel) baPanel.classList.toggle('hidden', !browserAgentMode);
+
+            // Diğer modu kapat
+            if (browserAgentMode && agentMode) {
+                agentMode = false;
+                agentToggleBtn.classList.remove('active');
+                if (agentPanel) agentPanel.classList.add('hidden');
+                stopAgentPolling();
+            }
+
+            if (browserAgentMode) {
+                input.placeholder = '🌐 Tarayıcı görevi yazın... (ör: Google\'da Pardus Linux ara)';
+            } else {
+                input.placeholder = defaultPlaceholder;
+                stopBaPolling();
+            }
+        });
+    }
+
+    // Browser agent send override
+    sendBtn.addEventListener('click', (e) => {
+        if (!browserAgentMode) return;
+        e.stopImmediatePropagation();
+
+        const task = input.value.trim();
+        if (!task) return;
+
+        const browserType = baBrowserSelect ? baBrowserSelect.value : 'chromium';
+
+        addMessage(`🌐 Tarayıcı görevi (${browserType}): ${task}`, 'user');
+        input.value = '';
+        input.style.height = 'auto';
+        sendBtn.disabled = true;
+
+        fetch('/api/browser-agent/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({task, browser: browserType, use_profile: true})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                addMessage(`🌐 Tarayıcı ajanı başlatıldı (${browserType}). Çalışıyor...`, 'assistant');
+                startBaPolling();
+            } else {
+                addMessage('⚠️ Tarayıcı ajanı başlatılamadı: ' + (data.error || ''), 'assistant');
+            }
+        })
+        .catch(err => addMessage('⚠️ Bağlantı hatası: ' + err.message, 'assistant'));
+    }, true);
+
+    function startBaPolling() {
+        baLastStepCount = 0;
+        if (baStopBtn) baStopBtn.classList.remove('hidden');
+        if (baLog) baLog.innerHTML = '';
+        baPollingInterval = setInterval(pollBaStatus, 2000);
+    }
+
+    function stopBaPolling() {
+        if (baPollingInterval) {
+            clearInterval(baPollingInterval);
+            baPollingInterval = null;
+        }
+        if (baStopBtn) baStopBtn.classList.add('hidden');
+    }
+
+    function pollBaStatus() {
+        fetch('/api/browser-agent/status')
+        .then(r => r.json())
+        .then(status => {
+            const state = status.state || 'idle';
+
+            if (baPulse) baPulse.className = 'agent-pulse ' + state;
+
+            const stateLabels = {
+                'idle': 'Hazır', 'running': '🔄 Çalışıyor...',
+                'done': '✅ Tamamlandı', 'error': '❌ Hata'
+            };
+            if (baStatusText) baStatusText.textContent = stateLabels[state] || state;
+            if (baStepCount) baStepCount.textContent = `Adım ${status.current_step}/${status.max_steps}`;
+
+            // Log entries
+            if (status.steps && status.steps.length > baLastStepCount && baLog) {
+                const newSteps = status.steps.slice(baLastStepCount);
+                newSteps.forEach(s => {
+                    const entry = document.createElement('div');
+                    entry.className = 'agent-log-entry';
+                    const icon = {
+                        'click': '🖱️', 'type': '⌨️', 'navigate': '🔗', 'scroll': '📜',
+                        'wait': '⏳', 'press_key': '⌨️', 'extract': '📄', 'done': '✅',
+                        'system': '⚙️', 'error': '❌'
+                    }[s.action] || '▶️';
+                    entry.innerHTML = `
+                        <span class="step-num">#${s.step}</span>
+                        <span class="step-action">${icon} ${escapeHTML(s.action)}</span>
+                        <span class="step-thought">${escapeHTML(s.thought || '')}</span>
+                    `;
+                    baLog.appendChild(entry);
+                });
+                baLog.scrollTop = baLog.scrollHeight;
+                baLastStepCount = status.steps.length;
+            }
+
+            // Completion
+            if (state === 'done' || state === 'error' || state === 'idle') {
+                stopBaPolling();
+                if (state === 'done') {
+                    const answer = status.final_answer || (status.last_action && status.last_action.thought) || 'Görev tamamlandı.';
+                    addMessage('✅ Tarayıcı ajanı tamamladı: ' + answer, 'assistant');
+                } else if (state === 'error' && status.last_action) {
+                    addMessage('❌ Tarayıcı ajanı hatası: ' + (status.last_action.thought || ''), 'assistant');
+                }
+            }
+        })
+        .catch(err => console.error('[BrowserAgent] Polling error:', err));
+    }
+
+    if (baStopBtn) {
+        baStopBtn.addEventListener('click', () => {
+            fetch('/api/browser-agent/stop', {method: 'POST'})
+            .then(r => r.json())
+            .then(() => {
+                addMessage('🛑 Tarayıcı ajanı durduruldu.', 'assistant');
+                stopBaPolling();
+                if (baPulse) baPulse.className = 'agent-pulse';
+                if (baStatusText) baStatusText.textContent = 'Durduruldu';
+            });
+        });
     }
 
 });

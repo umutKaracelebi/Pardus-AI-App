@@ -97,6 +97,9 @@
                             <button class="popover-btn" id="video-upload-btn"><i class="fa-solid fa-video"></i><span>Video Yükle</span></button>
                             <button class="popover-btn" id="audio-upload-btn"><i class="fa-solid fa-music"></i><span>Ses Yükle</span></button>
                             <button class="popover-btn" id="file-upload-btn"><i class="fa-solid fa-file-lines"></i><span>Dosya Yükle</span></button>
+                            <div class="popover-divider"></div>
+                            <button class="popover-btn" id="generate-image-btn"><i class="fa-solid fa-palette"></i><span>Görsel Oluştur</span></button>
+                            <button class="popover-btn" id="generate-video-btn"><i class="fa-solid fa-film"></i><span>Video Oluştur</span></button>
                         </div>
                     </div>
                     <!-- Image Preview Strip -->
@@ -144,8 +147,11 @@
                         rows="1"
                         autofocus
                     ></textarea>
-                    <button class="agent-toggle-btn" id="agent-toggle-btn" title="Ajan Modu">
+                    <button class="agent-toggle-btn" id="agent-toggle-btn" title="Masaüstü Ajan">
                         <i class="fa-solid fa-robot"></i>
+                    </button>
+                    <button class="agent-toggle-btn" id="browser-agent-toggle-btn" title="Tarayıcı Ajan">
+                        <i class="fa-solid fa-globe"></i>
                     </button>
                     <button class="send-btn" id="send-btn" disabled>
                         <i class="fa-solid fa-arrow-up"></i>
@@ -166,6 +172,25 @@
                         </div>
                     </div>
                     <div class="agent-log" id="agent-log"></div>
+                </div>
+                <!-- Browser Agent Panel -->
+                <div class="agent-panel hidden" id="browser-agent-panel">
+                    <div class="agent-panel-header">
+                        <div class="agent-status-indicator">
+                            <span class="agent-pulse" id="ba-pulse"></span>
+                            <span id="ba-status-text">Tarayıcı Ajanı Hazır</span>
+                        </div>
+                        <div class="agent-panel-actions">
+                            <select id="ba-browser-select" class="ba-browser-select">
+                                <option value="chromium">Yükleniyor...</option>
+                            </select>
+                            <span id="ba-step-count" class="agent-step-count"></span>
+                            <button class="agent-stop-btn hidden" id="ba-stop-btn" title="Durdur">
+                                <i class="fa-solid fa-stop"></i> Durdur
+                            </button>
+                        </div>
+                    </div>
+                    <div class="agent-log" id="ba-log"></div>
                 </div>
                 <div class="input-footer">
                     Pardus AI yanlış bilgi verebilir. Önemli bilgileri doğrulayın.
@@ -266,5 +291,14 @@
             </div>
         </div>
     </div>
+
+    <!-- Fullscreen Media Preview -->
+    <div class="media-preview-overlay hidden" id="media-preview-overlay">
+        <div class="media-preview-container">
+            <button class="media-preview-close" id="media-preview-close" title="Kapat"><i class="fa-solid fa-xmark"></i></button>
+            <div class="media-preview-content" id="media-preview-content"></div>
+        </div>
+    </div>
+
 </body>
 </html>

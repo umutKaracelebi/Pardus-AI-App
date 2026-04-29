@@ -596,6 +596,77 @@ def agent_status():
     status = _get_agent().status
     return jsonify(status)
 
+
+# ═══════════════ BROWSER AGENT API ═══════════════
+
+_browser_agent = None
+
+def _get_browser_agent():
+    global _browser_agent
+    if _browser_agent is None:
+        from src.features.browser_agent import BrowserAgent
+        _browser_agent = BrowserAgent(_get_api())
+    return _browser_agent
+
+@app.route('/api/browser-agent/start', methods=['POST'])
+def browser_agent_start():
+    """Start the browser agent with a task."""
+    data = request.get_json()
+    task = data.get('task', '') if data else ''
+    browser_type = data.get('browser', 'chromium') if data else 'chromium'
+    use_profile = data.get('use_profile', False) if data else False
+    if not task:
+        return jsonify({'success': False, 'error': 'Görev açıklaması gerekli.'})
+    result = _get_browser_agent().start(task, browser_type=browser_type, use_profile=use_profile)
+    if 'error' in result:
+        return jsonify({'success': False, 'error': result['error']})
+    return jsonify({'success': True, 'message': result['message']})
+
+@app.route('/api/browser-agent/stop', methods=['POST'])
+def browser_agent_stop():
+    """Stop the running browser agent."""
+    result = _get_browser_agent().stop()
+    return jsonify({'success': True, 'message': result['message']})
+
+@app.route('/api/browser-agent/status', methods=['GET'])
+def browser_agent_status():
+    """Get current browser agent status."""
+    status = _get_browser_agent().status
+    return jsonify(status)
+
+@app.route('/api/browser-agent/browsers', methods=['GET'])
+def browser_agent_browsers():
+    """Sistemde kurulu tarayıcıları tespit et."""
+    import shutil
+    browsers = []
+
+    # (binary, görünen isim, playwright engine, channel)
+    known = [
+        ('firefox', 'Firefox', 'firefox', None),
+        ('firefox-esr', 'Firefox', 'firefox', None),
+        ('google-chrome-stable', 'Google Chrome', 'chromium', 'chrome'),
+        ('google-chrome', 'Google Chrome', 'chromium', 'chrome'),
+        ('chromium-browser', 'Chromium', 'chromium', 'chromium'),
+        ('chromium', 'Chromium', 'chromium', 'chromium'),
+        ('brave-browser', 'Brave', 'chromium', 'chrome'),
+        ('microsoft-edge-stable', 'Microsoft Edge', 'chromium', 'msedge'),
+        ('microsoft-edge', 'Microsoft Edge', 'chromium', 'msedge'),
+        ('opera', 'Opera', 'chromium', 'chrome'),
+        ('vivaldi-stable', 'Vivaldi', 'chromium', 'chrome'),
+        ('vivaldi', 'Vivaldi', 'chromium', 'chrome'),
+    ]
+
+    seen = set()
+    for binary, label, engine, channel in known:
+        if label in seen:
+            continue
+        if shutil.which(binary):
+            seen.add(label)
+            bid = f"{engine}:{channel}" if channel else engine
+            browsers.append({'id': bid, 'label': label})
+
+    return jsonify({'success': True, 'browsers': browsers})
+
 def _extract_file_text(file_path, ext):
     """Extract text content from uploaded files."""
     ext = ext.lower()
@@ -806,7 +877,153 @@ def generate_title():
         return jsonify({'success': True, 'title': fallback})
 
 
+# ═══════════════ CONTENT GENERATION (t2i / t2v) ═══════════════
+
+import requests as _requests
+import hashlib as _hashlib
+from flask import Response
+
+# Cache dir for proxied media
+_MEDIA_CACHE_DIR = os.path.join(os.path.dirname(__file__), 'static', 'gen_cache')
+os.makedirs(_MEDIA_CACHE_DIR, exist_ok=True)
+
+
+def _download_and_cache(url):
+    """Download a remote URL and cache it locally. Returns the local filename."""
+    url_hash = _hashlib.md5(url.encode()).hexdigest()
+    # Determine extension from URL
+    ext = '.png'
+    lower = url.lower()
+    if '.jpg' in lower or '.jpeg' in lower:
+        ext = '.jpg'
+    elif '.webp' in lower:
+        ext = '.webp'
+    elif '.mp4' in lower:
+        ext = '.mp4'
+    elif '.webm' in lower:
+        ext = '.webm'
+
+    filename = f"{url_hash}{ext}"
+    filepath = os.path.join(_MEDIA_CACHE_DIR, filename)
+
+    if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+        return filename
+
+    try:
+        r = _requests.get(url, timeout=60, stream=True, headers={
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://tongyi.aliyun.com/',
+        })
+        r.raise_for_status()
+        with open(filepath, 'wb') as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+        print(f"[proxy] ✅ Cached: {filename} ({os.path.getsize(filepath)} bytes)")
+        return filename
+    except Exception as e:
+        print(f"[proxy] ❌ Download failed: {e}")
+        return None
+
+
+@app.route('/api/proxy-media')
+def proxy_media():
+    """Proxy an external media URL through Flask to bypass CORS."""
+    url = request.args.get('url', '')
+    if not url:
+        return 'Missing url', 400
+
+    filename = _download_and_cache(url)
+    if filename:
+        return send_from_directory(_MEDIA_CACHE_DIR, filename)
+
+    # Fallback: stream directly
+    try:
+        r = _requests.get(url, timeout=60, stream=True, headers={
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://tongyi.aliyun.com/',
+        })
+        content_type = r.headers.get('Content-Type', 'application/octet-stream')
+        return Response(r.iter_content(8192), content_type=content_type)
+    except Exception as e:
+        return str(e), 502
+
+
+@app.route('/api/generate-image', methods=['POST'])
+def generate_image():
+    """Generate an image from text prompt using Qwen t2i."""
+    try:
+        data = request.get_json()
+        prompt = (data.get('prompt', '') if data else '').strip()
+        size = data.get('size', '16:9') if data else '16:9'
+
+        if not prompt:
+            return jsonify({'success': False, 'error': 'Görsel açıklaması boş olamaz.'})
+
+        print(f"[t2i] Görsel üretiliyor: {prompt[:80]}... (boyut: {size})")
+        result = _get_api().generate_image(prompt, size=size)
+
+        if result.get('success'):
+            original_url = result['image_url']
+            print(f"[t2i] ✅ Görsel hazır: {original_url[:80]}...")
+
+            # Cache locally and return proxied URL
+            cached = _download_and_cache(original_url)
+            if cached:
+                proxied_url = f"/static/gen_cache/{cached}"
+            else:
+                proxied_url = f"/api/proxy-media?url={original_url}"
+
+            return jsonify({
+                'success': True,
+                'image_url': proxied_url,
+                'original_url': original_url,
+            })
+        else:
+            print(f"[t2i] ❌ Hata: {result.get('error', 'bilinmiyor')}")
+            return jsonify({'success': False, 'error': result.get('error', 'Görsel üretilemedi.')})
+    except Exception as e:
+        print(f"[t2i] ❌ Exception: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/generate-video', methods=['POST'])
+def generate_video():
+    """Generate a video from text prompt using Qwen t2v."""
+    try:
+        data = request.get_json()
+        prompt = (data.get('prompt', '') if data else '').strip()
+        size = data.get('size', '16:9') if data else '16:9'
+
+        if not prompt:
+            return jsonify({'success': False, 'error': 'Video açıklaması boş olamaz.'})
+
+        print(f"[t2v] Video üretiliyor: {prompt[:80]}... (boyut: {size})")
+        result = _get_api().generate_video(prompt, size=size)
+
+        if result.get('success'):
+            original_url = result['video_url']
+            print(f"[t2v] ✅ Video hazır: {original_url[:80]}...")
+
+            # Cache locally and return proxied URL
+            cached = _download_and_cache(original_url)
+            if cached:
+                proxied_url = f"/static/gen_cache/{cached}"
+            else:
+                proxied_url = f"/api/proxy-media?url={original_url}"
+
+            return jsonify({
+                'success': True,
+                'video_url': proxied_url,
+                'original_url': original_url,
+            })
+        else:
+            print(f"[t2v] ❌ Hata: {result.get('error', 'bilinmiyor')}")
+            return jsonify({'success': False, 'error': result.get('error', 'Video üretilemedi.')})
+    except Exception as e:
+        print(f"[t2v] ❌ Exception: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+
 def start_server(port=5789):
     """Start Flask server in a background thread."""
     app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
-
